@@ -51,17 +51,26 @@ pip install -r ~/manara/backend/requirements.txt
 `mkvirtualenv` puts it at `~/.virtualenvs/manaralms`. If you get
 "command not found," `pip install virtualenvwrapper` first.
 
-## 4. Create the MySQL database
+## 4. Database — SQLite on free tier (no setup)
 
-- PA dashboard → **Databases** tab.
-- Set your MySQL password (only asked once).
-- Under "Create a database," name it `default`.
-  The full DB name becomes `manaralms$default`.
+PA free tier no longer includes MySQL. Leave `DATABASE_URL` unset and
+the backend falls back to SQLite at
+`~/manara/backend/instance/lms.db`. PA's `~/` filesystem is persistent
+across reloads and app-shutdowns, so this DB survives.
+
+If you later upgrade to Hacker+ ($5/mo) and want MySQL:
+- PA dashboard → **Databases** tab → set MySQL password → create db
+  called `default` (full name: `manaralms$default`).
+- Uncomment the `DATABASE_URL` line in `~/.pythonanywhere.env` (step 5)
+  with the password.
+- Reload the web app.
+
+Nothing else changes — SQLite and MySQL run the same code path.
 
 ## 5. Create the env file
 
 Copy `backend/.env.pythonanywhere.example` → `~/.pythonanywhere.env`
-and fill in the three placeholders:
+and fill in the two required placeholders:
 
 ```bash
 cp ~/manara/backend/.env.pythonanywhere.example ~/.pythonanywhere.env
@@ -72,8 +81,9 @@ nano ~/.pythonanywhere.env
   ```bash
   python -c "import secrets; print(secrets.token_urlsafe(64))"
   ```
-- `DATABASE_URL` — use the password from step 4.
 - `CORS_ORIGINS` — leave as `https://manaralms.pythonanywhere.com` for now.
+- `DATABASE_URL` — leave commented out on free tier (SQLite kicks in
+  automatically). Uncomment + fill only if you upgraded to a paid tier.
 
 ## 6. Configure the Web tab
 
@@ -117,14 +127,17 @@ Back in the bash console:
 workon manaralms
 cd ~/manara/backend
 export MANARA_ENV=production
-export DATABASE_URL='mysql+pymysql://manaralms:<db-password>@manaralms.mysql.pythonanywhere-services.com/manaralms$default'
 export SECRET_KEY='<same 64-char string you put in .env>'
+# Skip DATABASE_URL on free tier — SQLite is the default.
+# On paid MySQL:
+# export DATABASE_URL='mysql+pymysql://manaralms:<db-password>@manaralms.mysql.pythonanywhere-services.com/manaralms$default'
 python seed_prod.py
 ```
 
 Copy the printed admin password. `_ensure_schema_updates` in `app.py`
 creates every table on first import via `db.create_all()`, so no
-manual migrations.
+manual migrations. On SQLite this materialises `instance/lms.db` the
+first time you run any code against it.
 
 ## 8. Reload the app
 
@@ -166,12 +179,30 @@ pip install -r backend/requirements.txt  # only when deps changed
 request. Model deletes / non-additive changes still need a manual
 Alembic-style migration.
 
+## SQLite backup + restore (free tier)
+
+The whole DB is one file at `~/manara/backend/instance/lms.db`.
+Regular backup:
+
+```bash
+cd ~/manara/backend/instance
+cp lms.db "lms.db.$(date +%F).bak"
+# Or download it via PA's Files tab and keep a copy locally.
+```
+
+Restore = drop the .db back in place and hit the Web tab Reload.
+
 ## Troubleshooting
 
 - **502 Bad Gateway** — Check the error log at the top of the Web tab.
   Common cause: a mis-copied env var or a missing dep.
-- **500 on every request** — Usually `DATABASE_URL` typo. The `$`
-  between username and DB name is mandatory in the URL.
+- **500 on every request** — Usually `DATABASE_URL` typo. On free
+  tier, the safest fix is comment `DATABASE_URL` out entirely
+  (falls back to SQLite). On MySQL, the `$` between username and DB
+  name is mandatory in the URL.
+- **"database is locked" errors under load** — SQLite's single-writer
+  limit surfacing. Fine for a demo school; upgrade to Hacker + MySQL
+  once you have real concurrent traffic.
 - **Fresh reload, no schema** — Hit the health endpoint once; the
   first request is what boots `create_app` and runs `db.create_all`.
 - **"Locked account" on first sign-in** — The failed-login lockout
