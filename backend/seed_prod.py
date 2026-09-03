@@ -7,9 +7,9 @@ on a fresh production DB and start real data entry.
 Run ONCE on PythonAnywhere from a bash console:
 
     cd ~/manara/backend
-    source ~/.virtualenvs/manara/bin/activate
+    source ~/.virtualenvs/manaralms/bin/activate
     export MANARA_ENV=production
-    export DATABASE_URL='mysql+pymysql://manara:<db-password>@manara.mysql.pythonanywhere-services.com/manara$default'
+    export DATABASE_URL='mysql+pymysql://manaralms:<db-password>@manaralms.mysql.pythonanywhere-services.com/manaralms$default'
     export SECRET_KEY='<64+ char random string>'
     python seed_prod.py
 

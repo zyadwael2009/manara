@@ -1,12 +1,12 @@
 """PythonAnywhere WSGI entry point.
 
 Point PA's Web tab → "WSGI configuration file" at
-    /home/manara/manara/backend/wsgi_pythonanywhere.py
+    /home/manaralms/manara/backend/wsgi_pythonanywhere.py
 
 by editing PA's default WSGI script to be just:
 
     import sys, os
-    project_home = "/home/manara/manara/backend"
+    project_home = "/home/manaralms/manara/backend"
     if project_home not in sys.path:
         sys.path.insert(0, project_home)
     from wsgi_pythonanywhere import application  # noqa: F401

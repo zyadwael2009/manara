@@ -1,11 +1,11 @@
 # Deploy Manara backend to PythonAnywhere
 
-Target: `https://manara.pythonanywhere.com/api/...`
-Free tier. Everything below assumes you're signed into PA as **`manara`**.
+Target: `https://manaralms.pythonanywhere.com/api/...`
+Free tier. Everything below assumes you're signed into PA as **`manaralms`**.
 
 ## 0. Prerequisites
 
-- PA account (`manara`) — sign up at pythonanywhere.com
+- PA account (`manaralms`) — sign up at pythonanywhere.com
 - Local shell with `git` — used once to push the repo to a public
   git host (GitHub, GitLab, Bitbucket), which PA then clones
 - Free-tier caveat: outbound HTTP requests only reach hosts on PA's
@@ -20,7 +20,7 @@ From `D:/Programming/erp systems/lms`:
 
 ```bash
 git init
-git remote add origin https://github.com/<you>/manara.git
+git remote add origin https://github.com/zyadwael2009/manara.git
 git add .
 git commit -m "Initial Manara release"
 git push -u origin main
@@ -36,19 +36,19 @@ Open a bash console on PA (`Consoles → Bash`).
 
 ```bash
 cd ~
-git clone https://github.com/<you>/manara.git
+git clone https://github.com/zyadwael2009/manara.git
 ```
 
-The tree ends up at `/home/manara/manara/backend/...`.
+The tree ends up at `/home/manaralms/manara/backend/...`.
 
 ## 3. Create a Python 3.12 virtualenv
 
 ```bash
-mkvirtualenv --python=/usr/bin/python3.12 manara
+mkvirtualenv --python=/usr/bin/python3.12 manaralms
 pip install -r ~/manara/backend/requirements.txt
 ```
 
-`mkvirtualenv` puts it at `~/.virtualenvs/manara`. If you get
+`mkvirtualenv` puts it at `~/.virtualenvs/manaralms`. If you get
 "command not found," `pip install virtualenvwrapper` first.
 
 ## 4. Create the MySQL database
@@ -56,7 +56,7 @@ pip install -r ~/manara/backend/requirements.txt
 - PA dashboard → **Databases** tab.
 - Set your MySQL password (only asked once).
 - Under "Create a database," name it `default`.
-  The full DB name becomes `manara$default`.
+  The full DB name becomes `manaralms$default`.
 
 ## 5. Create the env file
 
@@ -73,18 +73,18 @@ nano ~/.pythonanywhere.env
   python -c "import secrets; print(secrets.token_urlsafe(64))"
   ```
 - `DATABASE_URL` — use the password from step 4.
-- `CORS_ORIGINS` — leave as `https://manara.pythonanywhere.com` for now.
+- `CORS_ORIGINS` — leave as `https://manaralms.pythonanywhere.com` for now.
 
 ## 6. Configure the Web tab
 
 - PA dashboard → **Web** tab → **Add a new web app**.
 - Manual configuration → Python 3.12.
 - On the app config page:
-  - **Source code:** `/home/manara/manara/backend`
-  - **Working directory:** `/home/manara/manara/backend`
-  - **Virtualenv:** `/home/manara/.virtualenvs/manara`
+  - **Source code:** `/home/manaralms/manara/backend`
+  - **Working directory:** `/home/manaralms/manara/backend`
+  - **Virtualenv:** `/home/manaralms/.virtualenvs/manaralms`
   - **WSGI configuration file:** click the link to edit the auto-generated
-    file (path is `/var/www/manara_pythonanywhere_com_wsgi.py`).
+    file (path is `/var/www/manaralms_pythonanywhere_com_wsgi.py`).
 
 Replace its entire contents with:
 
@@ -102,7 +102,7 @@ if env_path.exists():
         k, _, v = line.partition("=")
         os.environ.setdefault(k.strip(), v.strip())
 
-project_home = "/home/manara/manara/backend"
+project_home = "/home/manaralms/manara/backend"
 if project_home not in sys.path:
     sys.path.insert(0, project_home)
 
@@ -114,10 +114,10 @@ from wsgi_pythonanywhere import application  # noqa: F401
 Back in the bash console:
 
 ```bash
-workon manara
+workon manaralms
 cd ~/manara/backend
 export MANARA_ENV=production
-export DATABASE_URL='mysql+pymysql://manara:<db-password>@manara.mysql.pythonanywhere-services.com/manara$default'
+export DATABASE_URL='mysql+pymysql://manaralms:<db-password>@manaralms.mysql.pythonanywhere-services.com/manaralms$default'
 export SECRET_KEY='<same 64-char string you put in .env>'
 python seed_prod.py
 ```
@@ -133,7 +133,7 @@ PA Web tab → green **Reload** button.
 Verify with:
 
 ```bash
-curl https://manara.pythonanywhere.com/api/health
+curl https://manaralms.pythonanywhere.com/api/health
 ```
 
 Expected: `{"status": "ok", "phase": 2}`
@@ -146,7 +146,7 @@ you build the release APK (see `DEPLOY_GOOGLE_PLAY.md`), pass:
 
 ```
 flutter build appbundle --release \
-    --dart-define=API_BASE_URL=https://manara.pythonanywhere.com/api
+    --dart-define=API_BASE_URL=https://manaralms.pythonanywhere.com/api
 ```
 
 ## Ongoing updates
@@ -157,7 +157,7 @@ For every code change you push to git:
 # on PA bash
 cd ~/manara
 git pull
-workon manara
+workon manaralms
 pip install -r backend/requirements.txt  # only when deps changed
 # PA Web tab → Reload
 ```

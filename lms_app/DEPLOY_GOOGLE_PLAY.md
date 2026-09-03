@@ -1,7 +1,7 @@
 # Deploy Manara to Google Play
 
 Target package: **`com.manara.school`** (locked forever after first upload).
-Target API base URL: **`https://manara.pythonanywhere.com/api`**
+Target API base URL: **`https://manaralms.pythonanywhere.com/api`**
 
 ## 0. Prerequisites
 
@@ -10,7 +10,7 @@ Target API base URL: **`https://manara.pythonanywhere.com/api`**
 - Java `keytool` on your PATH (comes with the JDK — already on your
   machine if `flutter doctor` is green)
 - Backend already deployed and reachable at
-  `https://manara.pythonanywhere.com/api/health`
+  `https://manaralms.pythonanywhere.com/api/health`
   (see `backend/DEPLOY_PYTHONANYWHERE.md`)
 
 ## 1. Generate the upload keystore
@@ -64,7 +64,7 @@ user-visible change worth calling out in the changelog.
 ```bash
 cd D:/Programming/erp\ systems/lms/lms_app
 flutter build appbundle --release \
-    --dart-define=API_BASE_URL=https://manara.pythonanywhere.com/api
+    --dart-define=API_BASE_URL=https://manaralms.pythonanywhere.com/api
 ```
 
 Output: `build/app/outputs/bundle/release/app-release.aab`

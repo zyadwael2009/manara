@@ -74,7 +74,7 @@ admin. You'll receive credentials from your school office.
 ## Contact + support
 
 - **Email:** admin@manara.school
-- **Website:** https://manara.pythonanywhere.com
+- **Website:** https://manaralms.pythonanywhere.com
 - **Privacy policy:** https://<your-github>.github.io/manara-privacy/
 
 ---
