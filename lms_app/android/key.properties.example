@@ -1,0 +1,15 @@
+# Copy to `key.properties` and fill in — DO NOT commit the real file.
+# Generated once by:
+#   keytool -genkey -v -keystore ~/manara-upload-key.jks \
+#           -keyalg RSA -keysize 2048 -validity 10000 \
+#           -alias manara
+
+storePassword=<the password you typed into keytool>
+keyPassword=<usually the same value>
+keyAlias=manara
+
+# Path relative to android/. If you leave the .jks OUTSIDE the repo
+# (recommended — losing the keystore locks you out of ever updating
+# the Play Store app), use an absolute path here:
+#   storeFile=/home/you/manara-upload-key.jks
+storeFile=/home/you/manara-upload-key.jks

@@ -1,0 +1,46 @@
+# --- Python / Flask ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# --- Flask instance / secrets ---
+backend/instance/*.db
+backend/instance/.secret_key
+backend/instance/vapid.json
+backend/instance/firebase.json
+backend/instance/uploads/
+backend/.env
+backend/.env.production
+# NEVER commit the PythonAnywhere env file — it holds DB + SECRET_KEY.
+.pythonanywhere.env
+
+# --- Flutter ---
+lms_app/.dart_tool/
+lms_app/.packages
+lms_app/.pub-cache/
+lms_app/.pub/
+lms_app/build/
+lms_app/.flutter-plugins
+lms_app/.flutter-plugins-dependencies
+lms_app/pubspec.lock
+lms_app/**/GeneratedPluginRegistrant.*
+lms_app/ios/Pods/
+lms_app/android/.gradle/
+lms_app/android/local.properties
+# Phase 34 — release signing. The real key.properties AND any .jks
+# keystore MUST stay out of git. Losing the keystore means you can
+# never update the Play Store app again.
+lms_app/android/key.properties
+**/*.jks
+**/*.keystore
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,16 @@
+flask>=3.0.0
+flask-cors>=4.0.0
+flask-sqlalchemy>=3.1.0
+PyMySQL>=1.1.0
+python-dotenv>=1.0.0
+gunicorn>=21.2.0
+reportlab>=4.0.0
+# Phase 28 — browser Web Push (VAPID + AES-GCM). Optional at runtime:
+# the push blueprint feature-detects the import and no-ops if missing,
+# so the rest of the app boots either way.
+pywebpush>=2.0.0
+# Phase 30 · T6 — mobile push (FCM/APNs). Kept commented until the
+# Firebase project is created; the backend feature-detects the import
+# and no-ops otherwise. Uncomment + `pip install -r requirements.txt`
+# once you drop the service-account JSON at `instance/firebase.json`.
+# pyfcm>=2.0.0

@@ -1,0 +1,68 @@
+name: lms_app
+description: "Manara — K-12 school app (Flutter frontend)"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # --- State management (matches ClubHub convention) ---
+  flutter_riverpod: ^2.5.1
+
+  # --- HTTP + upload ---
+  http: ^1.2.0
+  http_parser: ^4.0.2
+  file_picker: ^8.1.4
+
+  # --- Persistent local storage ---
+  shared_preferences: ^2.3.3
+
+  # --- Typography + rendered content ---
+  google_fonts: ^6.2.1
+  flutter_markdown: ^0.7.4+1
+
+  # --- Micro-animations ---
+  animations: ^2.0.11
+
+  # --- Formatting ---
+  intl: ^0.20.2
+
+  # --- Images ---
+  cached_network_image: ^3.4.1
+
+  # --- Media viewers (Phase 2) ---
+  video_player: ^2.9.2
+  chewie: ^1.8.5
+  syncfusion_flutter_pdfviewer: ^33.2.13
+
+  # --- Phase 5: certificates ---
+  confetti: ^0.7.0
+  url_launcher: ^6.3.0
+
+  # --- Phase 7: dashboards & charts ---
+  fl_chart: ^0.68.0
+
+  # --- Phase 30 · T6 — mobile push (FCM / APNs). Kept commented until
+  # the Firebase project is created. When ready:
+  #   1. Uncomment the two lines below.
+  #   2. Follow `flutter pub add firebase_core firebase_messaging` for
+  #      the native config (google-services.json for Android,
+  #      GoogleService-Info.plist for iOS).
+  #   3. push_service_native.dart auto-activates via a defensive
+  #      import guard — no other Flutter code changes needed.
+  # firebase_core: ^3.6.0
+  # firebase_messaging: ^15.1.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

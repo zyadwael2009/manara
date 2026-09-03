@@ -1,0 +1,70 @@
+name: Deploy Manara web to GitHub Pages
+
+# Auto-runs on every push to main. Also runnable from the Actions tab
+# via workflow_dispatch (manual trigger) if you want to redeploy without
+# committing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Required for GitHub Pages via the deploy-pages action.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deploy at a time; cancel any queued runs.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # OVERRIDE THIS with your PythonAnywhere URL. If you set a repo
+      # variable named BACKEND_URL (Settings → Secrets and variables →
+      # Actions → Variables), the second line takes over.
+      BACKEND_URL: ${{ vars.BACKEND_URL || 'https://zyadwael.pythonanywhere.com' }}
+      # Repo name → GitHub Pages sub-path. `github.event.repository.name`
+      # avoids hard-coding "manara".
+      BASE_HREF: /${{ github.event.repository.name }}/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: lms_app
+        run: flutter pub get
+
+      - name: Build web bundle
+        working-directory: lms_app
+        run: |
+          flutter build web \
+            --dart-define=API_BASE_URL=${BACKEND_URL}/api \
+            --base-href ${BASE_HREF} \
+            --release
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: lms_app/build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

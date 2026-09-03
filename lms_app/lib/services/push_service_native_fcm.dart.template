@@ -1,0 +1,96 @@
+// Phase 30 · T6 — FCM/APNs native push service TEMPLATE.
+//
+// Kept as `.dart.template` (not `.dart`) so the analyzer skips it
+// today — `firebase_messaging` isn't in pubspec until you activate.
+// To activate:
+//
+//   1. Uncomment the two `firebase_*` lines in `pubspec.yaml` and run
+//      `flutter pub get`.
+//   2. Rename this file to `push_service_native_fcm.dart` (drop the
+//      `.template` suffix).
+//   3. In `push_service.dart`, swap the conditional-import spindle to:
+//
+//      import 'push_service_stub.dart'
+//          if (dart.library.html) 'push_service_web.dart'
+//          if (dart.library.io) 'push_service_native_fcm.dart';
+//
+//   4. Add the platform-specific Firebase config files
+//      (`google-services.json` for Android under
+//      `android/app/`; `GoogleService-Info.plist` for iOS under
+//      `ios/Runner/`). Follow `backend/PUSH_SETUP.md` for the server
+//      side.
+//
+// Once those four steps land, login → `registerIfSupported` pulls the
+// FCM token and POSTs it with `platform: "fcm"` (or `"apns"` on iOS).
+// `logout` → `unregister` deletes the token server-side and cancels
+// notifications.
+//
+// The server-side sender in `utils/push.py::send_mobile_push` already
+// feature-detects `pyfcm` and activates the same way.
+
+import 'dart:io' show Platform;
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+import 'api_service.dart';
+import 'push_service.dart';
+
+class _FcmPushService implements PushService {
+  String? _lastToken;
+
+  @override
+  Future<void> registerIfSupported() async {
+    try {
+      // App-wide initialization is idempotent — safe on hot restart.
+      await Firebase.initializeApp();
+      final messaging = FirebaseMessaging.instance;
+
+      final settings = await messaging.requestPermission(
+        alert: true, badge: true, sound: true,
+      );
+      if (settings.authorizationStatus != AuthorizationStatus.authorized &&
+          settings.authorizationStatus != AuthorizationStatus.provisional) {
+        return;
+      }
+
+      final token = await messaging.getToken();
+      if (token == null || token.isEmpty) return;
+      _lastToken = token;
+
+      final platform = Platform.isIOS ? 'apns' : 'fcm';
+      await ApiService.instance.pushSubscribeMobile(
+        token: token,
+        platform: platform,
+      );
+
+      // On token rotation, resubscribe silently.
+      messaging.onTokenRefresh.listen((newToken) async {
+        _lastToken = newToken;
+        try {
+          await ApiService.instance.pushSubscribeMobile(
+            token: newToken,
+            platform: platform,
+          );
+        } catch (_) {}
+      });
+    } catch (_) {
+      // Best-effort — the bell still works via the enqueue writer.
+    }
+  }
+
+  @override
+  Future<void> unregister() async {
+    final t = _lastToken;
+    if (t == null) return;
+    try {
+      await ApiService.instance.pushUnsubscribe(t);
+    } catch (_) {}
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (_) {}
+    _lastToken = null;
+  }
+}
+
+PushService createPushService() => _FcmPushService();
