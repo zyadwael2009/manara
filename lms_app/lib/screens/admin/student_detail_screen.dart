@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -77,6 +78,84 @@ class _StudentDetailScreenState extends ConsumerState<StudentDetailScreen> {
       _future = _load();
     });
     ref.invalidate(pendingElectivesProvider(widget.studentId));
+  }
+
+  /// Reset the student's password on their behalf.
+  ///
+  /// The school has no outbound email, so this is the whole of "I forgot my
+  /// password": an admin generates a new one here and hands it over in
+  /// person. The server signs the student out everywhere and requires them
+  /// to choose their own on next sign-in.
+  Future<void> _openResetPasswordDialog() async {
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Reset password?'),
+        content: const Text(
+          'A new temporary password will be generated and shown once. The '
+          'student is signed out on every device and must choose their own '
+          'password the next time they sign in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (proceed != true || !mounted) return;
+
+    try {
+      final temporary = await ApiService.instance.adminResetPassword(
+        userId: widget.studentId,
+      );
+      if (!mounted || temporary == null) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dctx) => AlertDialog(
+          title: const Text('Temporary password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Give this to the student. It is not shown again.'),
+              const SizedBox(height: AppSpacing.md),
+              SelectableText(
+                temporary,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: temporary));
+                if (dctx.mounted) Navigator.pop(dctx);
+              },
+              child: const Text('Copy'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dctx),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    }
   }
 
   /// Phase 23 — confirm before soft-deleting a student. History is
@@ -161,6 +240,11 @@ class _StudentDetailScreenState extends ConsumerState<StudentDetailScreen> {
               Uri.parse(ApiService.instance.transcriptPdfUrl(widget.studentId)),
               mode: LaunchMode.platformDefault,
             ),
+          ),
+          IconButton(
+            tooltip: 'Reset password',
+            icon: const Icon(Icons.lock_reset),
+            onPressed: _openResetPasswordDialog,
           ),
           IconButton(
             tooltip: 'Withdraw student',

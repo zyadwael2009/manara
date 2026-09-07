@@ -128,7 +128,7 @@ class _Thumbnail extends StatelessWidget {
                   imageUrl: url,
                   fit: BoxFit.cover,
                   fadeInDuration: const Duration(milliseconds: 300),
-                  errorWidget: (_, __, ___) => const _PlaceholderGlyph(),
+                  errorWidget: (_, _, _) => const _PlaceholderGlyph(),
                 )
               : const _PlaceholderGlyph(),
         ),

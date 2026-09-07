@@ -58,7 +58,7 @@ class _AnimatedLogoState extends State<_AnimatedLogo>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _c,
-      builder: (_, __) {
+      builder: (_, _) {
         final t = _c.value;
         return Container(
           width: 96,

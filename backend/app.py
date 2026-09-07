@@ -11,10 +11,9 @@ Phase 2 additions:
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Type
 
-from flask import Flask, current_app, jsonify, send_from_directory
+from flask import Flask, jsonify
 from flask_cors import CORS
 from sqlalchemy import inspect
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -28,6 +27,7 @@ from routes import (
     assignment_groups_bp,
     calendar_feed_bp,
     checkpoints_bp,
+    media_bp,
     comments_bp,
     diplomas_bp,
     fees_bp,
@@ -71,93 +71,102 @@ from routes import (
 from routes.auth import load_session_from_header
 
 
+# Bumped by hand on release. Surfaced by `/` and `/api/health` so a deploy
+# can be identified without shelling in — the old hard-coded `"phase": 2` had
+# been stale since Phase 2 and told an operator nothing.
+APP_VERSION = "1.0.0"
+
+
+def _column_ddl(column) -> str:
+    """Render a model column as the type half of an `ADD COLUMN` clause."""
+    type_sql = column.type.compile(dialect=db.engine.dialect)
+    ddl = f"{column.name} {type_sql}"
+    # A NOT NULL column can only be added to a populated table if it carries a
+    # default, so emit one when the model declares a literal default. Anything
+    # more (a callable default, a backfill) needs a real migration.
+    default = getattr(column.default, "arg", None)
+    if default is not None and not callable(default):
+        literal = default
+        if isinstance(default, bool):
+            literal = "1" if default else "0"
+        elif isinstance(default, str):
+            literal = f"'{default}'"
+        ddl += f" DEFAULT {literal}"
+    if not column.nullable:
+        ddl += " NOT NULL" if default is not None else ""
+    return ddl
+
+
 def _ensure_schema_updates(app: Flask) -> None:
-    """Create-or-migrate the schema in a lightweight, additive way.
+    """Create missing tables, then add any model column the DB is missing.
 
-    Phase 1: `db.create_all()`.
-    Phase 2: adds new tables (created automatically by create_all) AND adds
-    new columns to existing tables via ALTER for developer databases that
-    were created against the Phase-1 schema. Fresh DBs get everything from
-    `db.create_all()` directly.
+    This used to be a hand-maintained list of 16 `(table, column, type)`
+    tuples, which meant every new model column silently failed to reach an
+    existing database until someone remembered to append to it. The additions
+    are now *derived* by diffing `db.metadata` against a live inspector, so a
+    new column is picked up the moment it is declared on the model.
 
-    The additive ALTERs are best-effort — if a column already exists (fresh
-    DB, or previous run added it), the error is swallowed.
+    What this deliberately does NOT do — and what still needs a real migration
+    tool if the schema ever demands it:
+
+      * renaming or retyping a column
+      * dropping a column
+      * backfilling values into a new NOT NULL column
+      * anything that has to run in a specific order relative to a data change
+
+    See DEPLOY_PYTHONANYWHERE.md for the manual procedure in those cases.
     """
+    # `create_app()` is called twice on PythonAnywhere (once at the bottom of
+    # this module, once from wsgi_pythonanywhere.py). Reflecting the whole
+    # schema twice per boot is pure waste, so latch it — keyed on the database
+    # URI, because the test suite builds several apps per process and each new
+    # database still needs its tables created.
+    done = getattr(_ensure_schema_updates, "_done", None)
+    if done is None:
+        done = _ensure_schema_updates._done = set()
+    uri = app.config.get("SQLALCHEMY_DATABASE_URI")
+    if uri in done:
+        return
+
     with app.app_context():
         db.create_all()
 
         inspector = inspect(db.engine)
-        # Phase-2 additive columns on Phase-1 tables --------------------------
-        additions = [
-            ("users", "class_id", "VARCHAR(36)"),
-            ("users", "graduated_at", "DATETIME"),
-            ("courses", "grade_id", "VARCHAR(36)"),
-            ("courses", "elective_group", "VARCHAR(80)"),
-            ("courses", "succeeds_course_id", "VARCHAR(36)"),
-            # Phase 3 grade cache
-            ("enrollments", "cached_percent", "NUMERIC(5,2)"),
-            ("enrollments", "cached_letter", "VARCHAR(8)"),
-            ("enrollments", "cached_gpa", "NUMERIC(4,2)"),
-            ("enrollments", "cached_computed_at", "DATETIME"),
-            # Phase 5 certificate threshold
-            ("courses", "min_certificate_percent", "INTEGER"),
-            # Phase 23 — student withdrawal
-            ("users", "withdrawn_at", "DATETIME"),
-            # Phase 24 — quiz question-bank pool size
-            ("quizzes", "pool_size", "INTEGER"),
-            # Phase 25 — per-user opaque calendar feed token
-            ("users", "calendar_token", "VARCHAR(64)"),
-            # Phase 27 — group-mode assignments + video checkpoints +
-            # Meet URL on recurring periods. All additive on existing
-            # tables so dev DBs can pick them up on next boot.
-            ("assignments", "is_group", "BOOLEAN"),
-            ("assignments", "max_group_size", "INTEGER"),
-            ("assignment_submissions", "group_id", "VARCHAR(36)"),
-            ("timetable_periods", "meeting_url", "VARCHAR(1000)"),
-        ]
-        existing_cols = {}
         try:
-            for table, _col, _typ in additions:
-                cols = existing_cols.get(table)
-                if cols is None:
-                    try:
-                        cols = {c["name"] for c in inspector.get_columns(table)}
-                    except Exception:
-                        cols = set()
-                    existing_cols[table] = cols
+            live_tables = set(inspector.get_table_names())
         except Exception:
-            existing_cols = {}
+            live_tables = set()
 
-        # Phase 33 fix #16 — cross-DB safe: `inspector.get_columns()`
-        # was already the primary gate; the string-sniff on
-        # "duplicate column"/"already exists" was a Postgres/MySQL
-        # error-text lottery. Drop the fallback and re-inspect after
-        # each ALTER so a concurrent worker's write is visible.
         from sqlalchemy import text as _sql_text
-        for table, col, typ in additions:
-            cols = existing_cols.get(table)
-            if cols is None:
-                try:
-                    cols = {c["name"] for c in inspector.get_columns(table)}
-                except Exception:
-                    cols = set()
-                existing_cols[table] = cols
-            if col in cols:
-                continue
-            # Re-check right before ALTER in case a peer worker won
-            # the race between our earlier snapshot and now.
+
+        for table_name, table in db.metadata.tables.items():
+            if table_name not in live_tables:
+                continue  # create_all() just made it — it is already current.
             try:
-                fresh = {c["name"] for c in inspector.get_columns(table)}
-                existing_cols[table] = fresh
-                if col in fresh:
-                    continue
+                existing = {c["name"] for c in inspector.get_columns(table_name)}
             except Exception:
-                pass
-            db.session.execute(_sql_text(
-                f"ALTER TABLE {table} ADD COLUMN {col} {typ}"
-            ))
-            db.session.commit()
-            existing_cols[table].add(col)
+                continue
+
+            for column in table.columns:
+                if column.name in existing:
+                    continue
+                if column.primary_key:
+                    continue  # can't bolt a PK on after the fact
+                try:
+                    db.session.execute(
+                        _sql_text(
+                            f"ALTER TABLE {table_name} "
+                            f"ADD COLUMN {_column_ddl(column)}"
+                        )
+                    )
+                    db.session.commit()
+                except Exception:
+                    # Another worker won the race, or the dialect refuses the
+                    # clause. Roll back so the session stays usable; a genuine
+                    # mismatch surfaces on first use of the column.
+                    db.session.rollback()
+
+    done.add(uri)
 
 
 def create_app(config_class: Type[Config] = Config) -> Flask:
@@ -203,6 +212,9 @@ def create_app(config_class: Type[Config] = Config) -> Flask:
     app.register_blueprint(students_bp, url_prefix="/api/users")
     app.register_blueprint(department_leaders_bp, url_prefix="/api/department-leaders")
     app.register_blueprint(uploads_bp, url_prefix="/api/uploads")
+    # Mounted at the root: `/media/<path>` URLs are persisted inside
+    # lesson + submission rows, so the prefix can't move under /api.
+    app.register_blueprint(media_bp)
 
     # Phase 3 — progress + grading
     app.register_blueprint(progress_bp, url_prefix="/api")            # declares full paths itself
@@ -249,23 +261,19 @@ def create_app(config_class: Type[Config] = Config) -> Flask:
     app.register_blueprint(diplomas_bp, url_prefix="/api")
     app.register_blueprint(standards_bp, url_prefix="/api")
 
-    # --- Static media serving --------------------------------------------------
-    # Resolve the upload dir at request time (not register time) so tests
-    # that swap `app.instance_path` after `create_app()` behave correctly.
-    @app.route("/media/<path:filename>", methods=["GET"])
-    def serve_media(filename: str):
-        return send_from_directory(
-            str(Path(current_app.instance_path) / "uploads"), filename
-        )
-
     # --- Health / root ---
     @app.route("/api/health", methods=["GET"])
     def health():
-        return jsonify({"status": "ok", "phase": 2}), 200
+        return jsonify({"status": "ok", "version": APP_VERSION}), 200
 
     @app.route("/", methods=["GET"])
     def root():
-        return jsonify({"service": "lms-api", "phase": 2, "docs": "/api/health"}), 200
+        return (
+            jsonify(
+                {"service": "lms-api", "version": APP_VERSION, "docs": "/api/health"}
+            ),
+            200,
+        )
 
     # --- JSON error handlers ---
     @app.errorhandler(404)

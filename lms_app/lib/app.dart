@@ -5,6 +5,7 @@ import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'screens/admin/admin_home_screen.dart';
+import 'screens/auth/change_password_screen.dart';
 import 'screens/auth/login_screen.dart' show LoginScreen, DemoCredentials;
 import 'services/api_service.dart';
 import 'screens/instructor/teacher_home_screen.dart';
@@ -62,6 +63,12 @@ class _LmsAppState extends ConsumerState<LmsApp> {
       return const LoginScreen();
     }
     final u = auth.user!;
+    // A password chosen by someone else (CSV import, admin reset) is not yet
+    // this user's password. Gate the whole app on replacing it rather than
+    // nagging with a banner they can dismiss forever.
+    if (u.mustChangePassword) {
+      return const ChangePasswordScreen(forced: true);
+    }
     if (u.isAdmin) return const AdminHomeScreen();
     if (u.isInstructor) return const TeacherHomeScreen();
     if (u.isParent) return const ParentHomeScreen();

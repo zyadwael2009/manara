@@ -392,7 +392,7 @@ class _HeroImage extends StatelessWidget {
               CachedNetworkImage(
                 imageUrl: AppConstants.resolveMediaUrl(course.thumbnailUrl!),
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                errorWidget: (_, _, _) => const SizedBox.shrink(),
               ),
               Container(
                 decoration: const BoxDecoration(

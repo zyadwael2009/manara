@@ -66,7 +66,7 @@ class _ProgressRingState extends State<ProgressRing>
     final done = widget.percent >= 100;
     return AnimatedBuilder(
       animation: _fill,
-      builder: (_, __) => CustomPaint(
+      builder: (_, _) => CustomPaint(
         size: Size.square(widget.size),
         painter: _RingPainter(
           progress: _fill.value,

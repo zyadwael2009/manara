@@ -26,7 +26,10 @@ lms_app/.pub/
 lms_app/build/
 lms_app/.flutter-plugins
 lms_app/.flutter-plugins-dependencies
-lms_app/pubspec.lock
+# NOTE: pubspec.lock is deliberately NOT ignored. This is an application,
+# not a library, so the lockfile is what makes a build reproducible --
+# without it CI and a developer's machine can resolve different versions
+# of 20+ transitive dependencies.
 lms_app/**/GeneratedPluginRegistrant.*
 lms_app/ios/Pods/
 lms_app/android/.gradle/

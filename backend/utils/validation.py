@@ -79,3 +79,36 @@ def as_number(value: Any, field_name: str, *, default: float | None = None) -> f
         return float(value)
     except (TypeError, ValueError) as e:
         raise ValidationError(f"'{field_name}' must be a number.") from e
+
+
+# The three call sites that set a password (self-registration, the admin's
+# create-user endpoint, and the change-password endpoint) each used to inline
+# `if len(password) < 8`. One helper keeps the rule — and any future
+# tightening of it — in a single place.
+MIN_PASSWORD_LENGTH = 8
+
+# Passwords the bulk importer used to hand out, plus the usual suspects. A
+# school rolling out accounts in a computer lab will otherwise end up with a
+# whole class sharing one of these.
+_BANNED_PASSWORDS = frozenset(
+    {
+        "password", "password1", "password123", "changeme", "changeme123",
+        "12345678", "123456789", "1234567890", "qwertyui", "qwerty123",
+        "letmein1", "iloveyou", "admin123", "welcome1", "manara123",
+    }
+)
+
+
+def validate_password_strength(password: str) -> str | None:
+    """Return an error message, or None when the password is acceptable.
+
+    Returns rather than raises so callers can keep their existing
+    `return jsonify({"error": ...}), 400` shape.
+    """
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"Password must be at least {MIN_PASSWORD_LENGTH} characters."
+    if password.lower() in _BANNED_PASSWORDS:
+        return "That password is too common. Pick something harder to guess."
+    if password.strip() == "":
+        return "Password must not be blank."
+    return None

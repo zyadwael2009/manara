@@ -43,7 +43,7 @@ class _SkeletonBoxState extends State<SkeletonBox> with SingleTickerProviderStat
     final hi = isDark ? AppColors.borderDark : AppColors.border;
     return AnimatedBuilder(
       animation: _c,
-      builder: (_, __) {
+      builder: (_, _) {
         final t = _c.value;
         return Container(
           width: widget.width,

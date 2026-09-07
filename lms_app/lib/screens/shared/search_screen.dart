@@ -119,7 +119,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     return ListView.separated(
       itemCount: rows.length,
-      separatorBuilder: (_, __) =>
+      separatorBuilder: (_, _) =>
           const Divider(height: 1, color: AppColors.divider),
       itemBuilder: (context, i) => _ResultTile(result: rows[i]),
     );

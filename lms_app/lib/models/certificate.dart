@@ -1,4 +1,5 @@
 /// Certificate models — full detail + summary + public verify shape.
+library;
 
 class Certificate {
   final String id;

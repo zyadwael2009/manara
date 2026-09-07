@@ -1,11 +1,11 @@
 /// Phase 20 — server envelope for `POST /api/admin/users/import`.
+library;
 
 class BulkImportResult {
   final List<BulkImportRow> created;
   final List<BulkImportRow> updated;
   final List<BulkImportSkip> skipped;
   final List<BulkImportError> errors;
-  final String temporaryPassword;
   final String notice;
 
   const BulkImportResult({
@@ -13,7 +13,6 @@ class BulkImportResult {
     this.updated = const [],
     this.skipped = const [],
     this.errors = const [],
-    this.temporaryPassword = '',
     this.notice = '',
   });
 
@@ -33,7 +32,6 @@ class BulkImportResult {
         errors: (j['errors'] as List<dynamic>? ?? const [])
             .map((e) => BulkImportError.fromJson(e as Map<String, dynamic>))
             .toList(),
-        temporaryPassword: (j['temporaryPassword'] as String?) ?? '',
         notice: (j['notice'] as String?) ?? '',
       );
 }
@@ -42,11 +40,25 @@ class BulkImportRow {
   final int row;
   final String email;
   final String id;
-  const BulkImportRow({required this.row, required this.email, required this.id});
+
+  /// Present on created rows only. Every imported user now gets their own
+  /// random password instead of the whole school sharing one literal, and
+  /// this response is the only place it is ever readable -- the server keeps
+  /// just the hash.
+  final String? temporaryPassword;
+
+  const BulkImportRow({
+    required this.row,
+    required this.email,
+    required this.id,
+    this.temporaryPassword,
+  });
+
   factory BulkImportRow.fromJson(Map<String, dynamic> j) => BulkImportRow(
         row: (j['row'] as num?)?.toInt() ?? 0,
         email: (j['email'] as String?) ?? '',
         id: (j['id'] as String?) ?? '',
+        temporaryPassword: j['temporaryPassword'] as String?,
       );
 }
 

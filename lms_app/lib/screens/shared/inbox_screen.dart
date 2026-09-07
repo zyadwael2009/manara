@@ -50,7 +50,7 @@ class InboxScreen extends ConsumerWidget {
             }
             return ListView.separated(
               itemCount: threads.length,
-              separatorBuilder: (_, __) =>
+              separatorBuilder: (_, _) =>
                   const Divider(height: 1, color: AppColors.divider),
               itemBuilder: (context, i) => _ThreadRow(
                 thread: threads[i],

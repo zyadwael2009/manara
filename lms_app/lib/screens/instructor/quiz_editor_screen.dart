@@ -474,7 +474,7 @@ class _QuestionEditorSheetState extends State<_QuestionEditorSheet> {
         Row(children: [
           ValueListenableBuilder<bool>(
             valueListenable: _options[i].$2,
-            builder: (_, v, __) => Checkbox(
+            builder: (_, v, _) => Checkbox(
               value: v,
               onChanged: (nv) {
                 if (_type == 'mc_single' && (nv ?? false)) {
@@ -514,24 +514,26 @@ class _QuestionEditorSheetState extends State<_QuestionEditorSheet> {
   }
 
   Widget _tfUi() {
-    return Row(children: [
-      Expanded(
-        child: RadioListTile<int>(
-          title: const Text('True is correct'),
-          value: 0,
-          groupValue: _tfCorrect,
-          onChanged: (v) => setState(() => _tfCorrect = v ?? 0),
+    // `groupValue`/`onChanged` on the tiles themselves are deprecated; the
+    // group's value and its change handler now live on a RadioGroup ancestor.
+    return RadioGroup<int>(
+      groupValue: _tfCorrect,
+      onChanged: (v) => setState(() => _tfCorrect = v ?? _tfCorrect),
+      child: const Row(children: [
+        Expanded(
+          child: RadioListTile<int>(
+            title: Text('True is correct'),
+            value: 0,
+          ),
         ),
-      ),
-      Expanded(
-        child: RadioListTile<int>(
-          title: const Text('False is correct'),
-          value: 1,
-          groupValue: _tfCorrect,
-          onChanged: (v) => setState(() => _tfCorrect = v ?? 1),
+        Expanded(
+          child: RadioListTile<int>(
+            title: Text('False is correct'),
+            value: 1,
+          ),
         ),
-      ),
-    ]);
+      ]),
+    );
   }
 
   Widget _shortUi(BuildContext context) {

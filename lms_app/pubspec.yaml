@@ -21,7 +21,11 @@ dependencies:
   file_picker: ^8.1.4
 
   # --- Persistent local storage ---
+  # shared_preferences holds the non-sensitive cached user snapshot;
+  # the session token is a 90-day bearer credential and lives in the
+  # Keystore / Keychain instead. See services/storage_service.dart.
   shared_preferences: ^2.3.3
+  flutter_secure_storage: ^10.3.1
 
   # --- Typography + rendered content ---
   google_fonts: ^6.2.1

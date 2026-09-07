@@ -17,6 +17,8 @@ from datetime import date as _date
 from decimal import Decimal
 from typing import Optional
 
+from sqlalchemy import func
+
 from models import (
     AttendanceMark,
     CourseRubric,
@@ -136,3 +138,50 @@ def compute_student_attendance_summary(student_id: str) -> dict:
         "total": total,
         "percent": percent,
     }
+
+
+def compute_attendance_summaries(student_ids: list[str]) -> dict[str, dict]:
+    """`compute_student_attendance_summary` for many students, in one query.
+
+    The admin "attendance patterns" dashboard walks every active student in
+    the school; calling the single-student helper in that loop meant one
+    SELECT per student, which is the one query pattern that gets strictly
+    worse as the school grows.
+
+    Students with no marks are present in the result with `total=0` and
+    `percent=None`, matching the single-student helper.
+    """
+    summaries: dict[str, dict] = {
+        sid: {
+            "present": 0, "absent": 0, "late": 0, "excused": 0,
+            "total": 0, "percent": None,
+        }
+        for sid in student_ids
+    }
+    if not student_ids:
+        return summaries
+
+    rows = (
+        db.session.query(
+            AttendanceMark.student_id,
+            AttendanceMark.status,
+            func.count().label("n"),
+        )
+        .filter(AttendanceMark.student_id.in_(student_ids))
+        .group_by(AttendanceMark.student_id, AttendanceMark.status)
+        .all()
+    )
+    for student_id, status, n in rows:
+        summary = summaries.get(student_id)
+        if summary is None:
+            continue
+        if status in ("present", "absent", "late", "excused"):
+            summary[status] += n
+        summary["total"] += n
+
+    for summary in summaries.values():
+        total = summary["total"]
+        if total:
+            good = summary["present"] + summary["excused"]
+            summary["percent"] = round(good / total * 100.0, 1)
+    return summaries

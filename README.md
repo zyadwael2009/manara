@@ -53,7 +53,7 @@ fourth role — **parent** — with a strict server-enforced boundary:
   edits, so no route was accidentally missed.
 - **Cross-parent isolation is a hard error.** Parent A asking for
   Parent B's linked child returns 403 — verified by
-  `tests/test_phase6.py::test_unlinked_parent_gets_403`.
+  `tests/test_parent_portal.py::test_unlinked_parent_gets_403`.
 - **Registration is closed.** Self-register with `role='parent'` is
   refused; parent accounts are created by the school office via
   `POST /api/users`.
@@ -101,16 +101,19 @@ useful for a hiring manager who wants to see the trust-core loop close:
 ```
 Flutter (mobile + web) ──HTTP+X-Session-Token── Flask + SQLAlchemy
                                                        │
-                                                       └── SQLite (dev) / MySQL (prod)
+                                                       └── SQLite (dev + PA free tier)
+                                                           MySQL/Postgres via DATABASE_URL
 ```
 
-- **Backend** — Flask app factory (`backend/app.py`), single
-  `models.py`, one blueprint per feature (`routes/*.py`), single
+- **Backend** — Flask app factory (`backend/app.py`), a `models/`
+  package split by domain (re-exported flat, so `from models import
+  User` still works), one blueprint per feature (`routes/*.py`), single
   source of truth for trust-core in `utils/permissions.py` and
   `utils/certificates.py`. UUID primary keys, `to_dict()` camelCase
   JSON, signed-session auth.
 - **Frontend** — Flutter (mobile + web) with Riverpod state
-  management, hand-rolled `http` client (no dio / retrofit). Design
+  management, hand-rolled `http` client (no dio / retrofit) whose
+  endpoints live in `services/api_service_*.dart` parts. Design
   tokens live in `lib/core/theme/`. fl_chart for dashboards, confetti
   for the cert celebration, reportlab-generated PDFs opened via
   `url_launcher`.
@@ -123,10 +126,10 @@ Flutter (mobile + web) ──HTTP+X-Session-Token── Flask + SQLAlchemy
 ### Tech stack
 
 - Flask 3, Flask-SQLAlchemy, Flask-CORS, Werkzeug password hashing
-- SQLAlchemy 2 with Numeric-typed grade columns; SQLite (dev) / MySQL (prod)
+- SQLAlchemy 2 with Numeric-typed grade columns; SQLite by default, MySQL/Postgres via `DATABASE_URL`
 - reportlab for server-rendered certificate PDFs
 - Flutter 3.11, Riverpod, http, url_launcher, fl_chart, confetti, syncfusion_flutter_pdfviewer, chewie
-- pytest for the backend test suite (81 tests as of Phase 8)
+- pytest for the backend test suite (355 tests); `flutter test` for the app
 
 ---
 
@@ -138,7 +141,7 @@ routes through the helpers. Parent role is read-plus-content-view only.
 
 Where the gates live:
 
-- `backend/utils/permissions.py` — 20+ named predicates
+- `backend/utils/permissions.py` — 40+ named predicates
   (`is_admin`, `teaches_course_in_any_class`, `is_linked_parent_of`,
   `can_view_content`, `can_edit_course_content`, `can_enter_grades_for`,
   `can_take_quiz`, `can_view_student_records`, …). Every route imports
@@ -154,22 +157,22 @@ Where the gates live:
 - `backend/routes/parents.py` — blueprint-level `@before_request`
   rejects every non-`GET` verb.
 
-**Tests: 81 passing.** Trust-core negatives get named tests you can
+**Tests: 355 passing.** Trust-core negatives get named tests you can
 grep for:
 
 ```
-tests/test_phase5.py::test_low_grade_blocks_certificate
-tests/test_phase5.py::test_no_grades_blocks_certificate
-tests/test_phase5.py::test_failing_quiz_blocks_certificate
-tests/test_phase6.py::test_self_register_as_parent_is_refused
-tests/test_phase6.py::test_unlinked_parent_gets_403
-tests/test_phase6.py::test_parent_cannot_complete_lessons
-tests/test_phase6.py::test_parent_cannot_grade
-tests/test_phase6.py::test_parent_bp_refuses_non_get
-tests/test_phase6.py::test_parent_cannot_revoke_cert
-tests/test_phase7.py::test_instructor_cannot_see_others_drilldown
-tests/test_phase7.py::test_dashboard_endpoints_are_readonly
-tests/test_phase8.py::test_full_seed_is_self_consistent
+tests/test_certificates.py::test_low_grade_blocks_certificate
+tests/test_certificates.py::test_no_grades_blocks_certificate
+tests/test_certificates.py::test_failing_quiz_blocks_certificate
+tests/test_parent_portal.py::test_self_register_as_parent_is_refused
+tests/test_parent_portal.py::test_unlinked_parent_gets_403
+tests/test_parent_portal.py::test_parent_cannot_complete_lessons
+tests/test_parent_portal.py::test_parent_cannot_grade
+tests/test_parent_portal.py::test_parent_bp_refuses_non_get
+tests/test_parent_portal.py::test_parent_cannot_revoke_cert
+tests/test_dashboards.py::test_instructor_cannot_see_others_drilldown
+tests/test_dashboards.py::test_dashboard_endpoints_are_readonly
+tests/test_seed_consistency.py::test_full_seed_is_self_consistent
 ```
 
 The last one runs the demo seed against an in-memory DB and asserts
@@ -204,7 +207,7 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:5000/api
 
 ```bash
 cd backend
-python -m pytest -q      # 81 passing
+python -m pytest -q      # 355 passing
 ```
 
 ---
@@ -272,11 +275,11 @@ the omissions were deliberate:
 manara/
 ├── backend/                    # Flask + SQLAlchemy
 │   ├── app.py                  # app factory
-│   ├── models.py               # single source of truth
+│   ├── models/                 # 54 models, split by domain, re-exported flat
 │   ├── wsgi.py                 # PythonAnywhere entry
 │   ├── routes/                 # one blueprint per feature
 │   ├── utils/                  # permissions, certificates, grading, quizzes, analytics
-│   ├── tests/                  # 81 tests, one file per phase
+│   ├── tests/                  # 355 tests + shared conftest.py
 │   └── seed_dev.py             # deterministic 25-student demo school
 ├── lms_app/                    # Flutter (mobile + web)
 │   ├── lib/

@@ -9,6 +9,7 @@ import '../../core/theme/category_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/transitions.dart';
+import '../../core/widgets/account_menu.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/progress_ring.dart';
 import '../../core/widgets/skeleton_loader.dart';
@@ -229,7 +230,7 @@ class _MyClassesScreenState extends ConsumerState<MyClassesScreen> {
               );
             },
           ),
-          if (user != null) _AccountMenu(),
+          if (user != null) const AccountMenu(),
         ],
       ),
       body: Stack(children: [
@@ -263,55 +264,6 @@ class _MyClassesScreenState extends ConsumerState<MyClassesScreen> {
           ),
         ),
       ]),
-    );
-  }
-}
-
-class _AccountMenu extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authProvider).user!;
-    return PopupMenuButton<String>(
-      tooltip: user.name,
-      onSelected: (v) async {
-        if (v == 'logout') await ref.read(authProvider.notifier).logout();
-      },
-      itemBuilder: (_) => [
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(user.name, style: AppTextStyles.bodyStrong(context)),
-              Text(user.email, style: AppTextStyles.caption(context)),
-              if (user.className != null) ...[
-                const SizedBox(height: 2),
-                Text('${user.gradeName ?? ""} · ${user.className}',
-                    style: AppTextStyles.micro(context, color: AppColors.primary)),
-              ],
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        const PopupMenuItem<String>(
-          value: 'logout',
-          child: Row(children: [
-            Icon(Icons.logout_rounded, size: 18),
-            SizedBox(width: AppSpacing.sm),
-            Text('Sign out'),
-          ]),
-        ),
-      ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        child: CircleAvatar(
-          backgroundColor: AppColors.primary,
-          child: Text(
-            user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -658,7 +610,7 @@ class _CategoryGlyph extends StatelessWidget {
               child: CachedNetworkImage(
                 imageUrl: AppConstants.resolveMediaUrl(url!),
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Center(
+                errorWidget: (_, _, _) => Center(
                   child: Icon(icon, color: Colors.white.withValues(alpha: 0.75), size: glyphSize),
                 ),
               ),
@@ -750,7 +702,7 @@ class _AttendanceChip extends ConsumerWidget {
     final async = ref.watch(myAttendanceProvider);
     return async.when(
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
       data: (marks) {
         if (marks.isEmpty) return const SizedBox.shrink();
         final good = marks

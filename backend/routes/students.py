@@ -40,18 +40,45 @@ students_bp = Blueprint("students", __name__)
 # Placement
 # =============================================================================
 def _auto_enroll_mandatory_for_grade(
-    student: User, grade_id: str | None, by_user: User
+    student: User,
+    grade_id: str | None,
+    by_user: User,
+    *,
+    mandatory_courses: list[Course] | None = None,
+    enrollment_index: dict[tuple[str, str], Enrollment] | None = None,
 ) -> list[Enrollment]:
     """Create (or reactivate) enrollments for every mandatory course in
     the target grade. Returns the enrollment rows written or reactivated.
     Idempotent — existing active rows are left alone.
+
+    The two optional caches exist for bulk callers such as class promotion,
+    which runs this once per student. Without them each student re-ran the
+    identical "mandatory courses for this grade" query and then one
+    "does an enrollment already exist" query per course — a 30-student
+    promotion issued several hundred round trips to write a few dozen rows.
+
+      * `mandatory_courses` — the grade's mandatory courses, fetched once.
+      * `enrollment_index`  — `{(student_id, course_id): Enrollment}` covering
+                              every student in the batch.
+
+    Both default to None, in which case this queries per call exactly as
+    before, so the single-student callers are unaffected.
     """
     if grade_id is None:
         return []
-    courses = Course.query.filter_by(grade_id=grade_id, elective_group=None).all()
+    courses = (
+        mandatory_courses
+        if mandatory_courses is not None
+        else Course.query.filter_by(grade_id=grade_id, elective_group=None).all()
+    )
     written: list[Enrollment] = []
     for c in courses:
-        existing = Enrollment.query.filter_by(student_id=student.id, course_id=c.id).first()
+        if enrollment_index is not None:
+            existing = enrollment_index.get((student.id, c.id))
+        else:
+            existing = Enrollment.query.filter_by(
+                student_id=student.id, course_id=c.id,
+            ).first()
         if existing is None:
             e = Enrollment(
                 student_id=student.id,
@@ -72,12 +99,27 @@ def _auto_enroll_mandatory_for_grade(
     return written
 
 
-def _soft_drop_all_active_enrollments(student: User) -> int:
+def _soft_drop_all_active_enrollments(
+    student: User,
+    *,
+    active_enrollments: list[Enrollment] | None = None,
+) -> int:
     """Mark every active enrollment for this student as 'dropped'. Returns
     the count. Used when the student moves to a different grade (whole
-    curriculum swap)."""
+    curriculum swap).
+
+    `active_enrollments` lets a bulk caller pass rows it has already loaded
+    (see `_auto_enroll_mandatory_for_grade` for why). Defaults to querying.
+    """
+    rows = (
+        active_enrollments
+        if active_enrollments is not None
+        else Enrollment.query.filter_by(student_id=student.id, status="active").all()
+    )
     n = 0
-    for e in Enrollment.query.filter_by(student_id=student.id, status="active").all():
+    for e in rows:
+        if e.status != "active":
+            continue
         e.status = "dropped"
         n += 1
     return n

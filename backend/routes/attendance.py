@@ -28,6 +28,7 @@ from models import (
     db,
 )
 from routes.auth import current_user, login_required
+from utils.pagination import paginate
 from utils.attendance import roll_up_to_commitment
 from utils.certificates import maybe_issue_certificate
 from utils.grading import recompute_enrollment_cache
@@ -283,7 +284,20 @@ def get_student_attendance(student_id: str):
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
 
-    rows = q.order_by(AttendanceMark.date.desc()).all()
+    q = q.order_by(AttendanceMark.date.desc())
+    # Attendance is the one history in the app that grows with *time* rather
+    # than with roster size: one row per school day, so ~180 a year and a few
+    # thousand across a K-12 career. `from`/`to` are optional, so an
+    # unfiltered call returns the lot.
+    #
+    # Back-compat: no `page`/`pageSize` still returns the bare array the
+    # Flutter calendar expects. Passing either returns the standard
+    # `{items, page, pageSize, hasMore}` envelope.
+    if request.args.get("page") or request.args.get("pageSize"):
+        return jsonify(
+            paginate(q, render_item=lambda r: r.to_dict(), max_page_size=200)
+        ), 200
+    rows = q.all()
     return jsonify([r.to_dict() for r in rows]), 200
 
 
@@ -306,5 +320,18 @@ def get_my_attendance():
             q = q.filter(AttendanceMark.date <= _parse_iso_date(to))
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
-    rows = q.order_by(AttendanceMark.date.desc()).all()
+    q = q.order_by(AttendanceMark.date.desc())
+    # Attendance is the one history in the app that grows with *time* rather
+    # than with roster size: one row per school day, so ~180 a year and a few
+    # thousand across a K-12 career. `from`/`to` are optional, so an
+    # unfiltered call returns the lot.
+    #
+    # Back-compat: no `page`/`pageSize` still returns the bare array the
+    # Flutter calendar expects. Passing either returns the standard
+    # `{items, page, pageSize, hasMore}` envelope.
+    if request.args.get("page") or request.args.get("pageSize"):
+        return jsonify(
+            paginate(q, render_item=lambda r: r.to_dict(), max_page_size=200)
+        ), 200
+    rows = q.all()
     return jsonify([r.to_dict() for r in rows]), 200

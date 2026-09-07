@@ -21,6 +21,7 @@ import '../shared/search_screen.dart';
 import 'attendance_take_screen.dart';
 import 'instructor_dashboard_screen.dart';
 import 'my_teaching_screen.dart';
+import '../../core/widgets/account_menu.dart';
 import '../../core/widgets/trailing_chevron.dart';
 
 class TeacherHomeScreen extends ConsumerStatefulWidget {
@@ -70,11 +71,7 @@ class _TeacherHomeScreenState extends ConsumerState<TeacherHomeScreen> {
               );
             },
           ),
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout_rounded),
-            onPressed: () => ref.read(authProvider.notifier).logout(),
-          ),
+          const AccountMenu(),
         ],
       ),
       // Phase 19 — quick way to broadcast to your class / a course you

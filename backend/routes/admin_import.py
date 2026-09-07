@@ -12,8 +12,11 @@ grades or classes on its own.
 
 Idempotent: rows are keyed on email — existing users get their name/role
 updated in-place, then their class placement is (re-)applied if given.
-Newly-created users get a temporary password `changeme123` — the
-returned envelope tells the admin to reset those.
+Newly-created users each get their OWN random temporary password, returned
+once in the response next to their row. They previously all shared the
+literal `changeme123`, which meant one leaked row handed you the whole
+school; the password is only ever stored as a hash, so this response is the
+single chance to read it.
 
 All writes go through the same helpers the admin's UI already uses
 (`_place_student_in_class`-shaped call → `_auto_enroll_mandatory_for_grade`).
@@ -23,6 +26,7 @@ from __future__ import annotations
 
 import csv
 import io
+import secrets
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request
@@ -45,7 +49,11 @@ admin_import_bp = Blueprint("admin_import", __name__)
 # closed the same hole via the JSON create endpoint. Admin accounts
 # must only come from either the seed script or a direct DB write.
 _ALLOWED_ROLES = ("student", "instructor", "parent")
-_DEFAULT_PASSWORD = "changeme123"
+
+
+def _temporary_password() -> str:
+    """A fresh URL-safe password per imported user (~95 bits of entropy)."""
+    return secrets.token_urlsafe(12)
 
 
 @admin_import_bp.route("/admin/users/import", methods=["POST"])
@@ -55,12 +63,15 @@ def bulk_import_users():
 
     Returns:
       {
-        "created":  [ {row, email, id}, ... ],
+        "created":  [ {row, email, id, temporaryPassword}, ... ],
         "updated":  [ {row, email, id}, ... ],
         "skipped":  [ {row, email, reason}, ... ],
         "errors":   [ {row, error}, ... ],
-        "temporaryPassword": "changeme123"
+        "notice":   "..."
       }
+
+    `temporaryPassword` appears only on created rows, and only in this
+    response — it is stored as a hash and cannot be read back later.
     """
     file = request.files.get("file")
     if file is None:
@@ -162,7 +173,11 @@ def bulk_import_users():
         existing = User.query.filter_by(email=email).first()
         if existing is None:
             user = User(name=name, email=email, role=role, is_active=True)
-            user.set_password(_DEFAULT_PASSWORD)
+            temp_password = _temporary_password()
+            user.set_password(temp_password)
+            # Someone other than the account holder chose this password, so
+            # the holder must replace it before the account is really theirs.
+            user.must_change_password = True
             db.session.add(user)
             db.session.flush()  # need the id for placement
             outcome = created
@@ -201,7 +216,10 @@ def bulk_import_users():
                 user.class_id = target_class.id
                 _auto_enroll_mandatory_for_grade(user, target_class.grade_id, admin)
 
-        outcome.append({"row": row_num, "email": email, "id": user.id})
+        entry = {"row": row_num, "email": email, "id": user.id}
+        if outcome is created:
+            entry["temporaryPassword"] = temp_password
+        outcome.append(entry)
 
     db.session.commit()
 
@@ -210,9 +228,10 @@ def bulk_import_users():
         "updated": updated,
         "skipped": skipped,
         "errors": errors,
-        "temporaryPassword": _DEFAULT_PASSWORD,
         "notice": (
-            "Newly created users share the temporary password above. "
-            "Ask each user to change it on first login."
+            "Each new user has their own temporary password, listed beside "
+            "their row. This is the only time they are shown — hand them out "
+            "now. Every one of these users is required to choose a new "
+            "password at first sign-in."
         ),
     }), 200

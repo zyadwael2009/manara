@@ -32,7 +32,7 @@ class _QuizViewerScreenState extends ConsumerState<QuizViewerScreen> {
   String? _error;
 
   /// Per-question staged answer.
-  /// - MC: List<String> of selected option ids
+  /// - MC: `List<String>` of selected option ids
   /// - Short answer / essay: String
   final Map<String, dynamic> _answers = {};
   bool _submitting = false;
@@ -346,19 +346,21 @@ class _QuestionCard extends StatelessWidget {
       case 'mc_single':
       case 'true_false':
         final selected = (answer as List<String>?)?.firstOrNull;
-        return Column(children: [
-          for (final o in question.options)
-            RadioListTile<String>(
-              value: o.id,
-              groupValue: selected,
-              title: Text(o.text),
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              onChanged: (v) {
-                if (v != null) onAnswer(<String>[v]);
-              },
-            ),
-        ]);
+        return RadioGroup<String>(
+          groupValue: selected,
+          onChanged: (v) {
+            if (v != null) onAnswer(<String>[v]);
+          },
+          child: Column(children: [
+            for (final o in question.options)
+              RadioListTile<String>(
+                value: o.id,
+                title: Text(o.text),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+          ]),
+        );
       case 'mc_multi':
         final selected = (answer as List<String>?) ?? const <String>[];
         return Column(children: [

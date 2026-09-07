@@ -25,7 +25,7 @@ class HomeworkStrip extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       // Phase 26 · T9 — SilentError so a homework fetch failure isn't
       // invisible; the retry lives in the tile itself.
-      error: (_, __) => SilentError(
+      error: (_, _) => SilentError(
         onRetry: () => ref.invalidate(classHomeworkProvider(classId)),
       ),
       data: (rows) {

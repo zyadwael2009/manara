@@ -93,13 +93,16 @@ class _QuestionBankScreenState extends ConsumerState<QuestionBankScreen> {
               itemBuilder: (context, i) => _BankItemCard(
                 item: items[i],
                 onDelete: () async {
+                  // Resolve the messenger BEFORE the await: `context` here is
+                  // the itemBuilder's, which the list can rebuild out from
+                  // under us, and the `mounted` check below is the State's,
+                  // not that element's.
+                  final messenger = ScaffoldMessenger.of(context);
                   try {
                     await ApiService.instance.deleteBankItem(items[i].id);
                     ref.invalidate(questionBankProvider(widget.courseId));
                   } on ApiException catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(SnackBar(content: Text(e.message)));
+                    messenger.showSnackBar(SnackBar(content: Text(e.message)));
                   }
                 },
               ),
@@ -204,7 +207,9 @@ class _BankComposerState extends ConsumerState<_BankComposer> {
   @override
   void dispose() {
     _prompt.dispose();
-    for (final c in _optCtrls) c.dispose();
+    for (final c in _optCtrls) {
+      c.dispose();
+    }
     _correctIdx.dispose();
     super.dispose();
   }
@@ -271,28 +276,29 @@ class _BankComposerState extends ConsumerState<_BankComposer> {
           const SizedBox(height: AppSpacing.md),
           ValueListenableBuilder<int>(
             valueListenable: _correctIdx,
-            builder: (context, correct, _) => Column(children: [
-              for (int i = 0; i < _optCtrls.length; i++)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(children: [
-                    Radio<int>(
-                      value: i, groupValue: correct,
-                      onChanged: (v) => _correctIdx.value = v ?? 0,
-                    ),
-                    Expanded(
-                      child: TextField(
-                        controller: _optCtrls[i],
-                        decoration: InputDecoration(
-                          labelText: 'Option ${String.fromCharCode(65 + i)}',
-                          border: const OutlineInputBorder(),
-                          isDense: true,
+            builder: (context, correct, _) => RadioGroup<int>(
+              groupValue: correct,
+              onChanged: (v) => _correctIdx.value = v ?? 0,
+              child: Column(children: [
+                for (int i = 0; i < _optCtrls.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(children: [
+                      Radio<int>(value: i),
+                      Expanded(
+                        child: TextField(
+                          controller: _optCtrls[i],
+                          decoration: InputDecoration(
+                            labelText: 'Option ${String.fromCharCode(65 + i)}',
+                            border: const OutlineInputBorder(),
+                            isDense: true,
+                          ),
                         ),
                       ),
-                    ),
-                  ]),
-                ),
-            ]),
+                    ]),
+                  ),
+              ]),
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
           Align(

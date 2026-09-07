@@ -6,6 +6,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/friendly_error.dart';
 import '../../core/utils/transitions.dart';
+import '../../core/widgets/account_menu.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../models/parent_link.dart';
 import '../../providers/auth_provider.dart';
@@ -51,11 +52,7 @@ class ParentHomeScreen extends ConsumerWidget {
               );
             },
           ),
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout_rounded),
-            onPressed: () => ref.read(authProvider.notifier).logout(),
-          ),
+          const AccountMenu(),
         ],
       ),
       body: RefreshIndicator(

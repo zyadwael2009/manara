@@ -19,7 +19,7 @@ import 'silent_error.dart';
 /// to [refresh()] via a [GlobalKey] the caller can hold.
 ///
 /// Callback contract:
-///   Future<PagedResult<T>> fetchPage(int page)
+///   `Future<PagedResult<T>> fetchPage(int page)`
 ///   Widget itemBuilder(BuildContext context, T item, int index)
 ///
 /// `PagedResult` mirrors the server's envelope:
@@ -143,7 +143,7 @@ class PagedListViewState<T> extends State<PagedListView<T>> {
       controller: _scroll,
       padding: widget.padding,
       itemCount: total,
-      separatorBuilder: (_, __) =>
+      separatorBuilder: (_, _) =>
           widget.separator ?? const SizedBox(height: 0),
       itemBuilder: (context, i) {
         if (i >= _items.length) {
