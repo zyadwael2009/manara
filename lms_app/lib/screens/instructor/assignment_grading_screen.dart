@@ -46,7 +46,7 @@ class AssignmentGradingScreen extends ConsumerWidget {
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
                 itemCount: subs.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 4),
+                separatorBuilder: (_, _) => const SizedBox(height: 4),
                 itemBuilder: (context, i) => _SubmissionRow(
                   sub: subs[i],
                   maxPoints: maxPoints,

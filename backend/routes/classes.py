@@ -323,46 +323,90 @@ def promote_class(class_id: str):
 
     admin = current_user()
     students = src.students.all()
+    moving = [s for s in students if s.id not in excludes]
+    held = len(students) - len(moving)
 
     promoted = 0
-    held = 0
     carried = 0
 
-    for s in students:
-        if s.id in excludes:
-            held += 1
-            continue
+    # --- Prefetch everything the per-student work needs -------------------
+    # This loop used to issue a handful of queries per student: their active
+    # enrollments (twice), the destination grade's mandatory courses (the same
+    # answer every time), an existence check per mandatory course, and a
+    # successor lookup per elective. A 30-student promotion ran several
+    # hundred round trips. All of it is knowable up front.
+    moving_ids = [s.id for s in moving]
+
+    active_by_student: dict[str, list[Enrollment]] = {sid: [] for sid in moving_ids}
+    enrollment_index: dict[tuple[str, str], Enrollment] = {}
+    if moving_ids:
+        for e in Enrollment.query.filter(Enrollment.student_id.in_(moving_ids)).all():
+            enrollment_index[(e.student_id, e.course_id)] = e
+            if e.status == "active":
+                active_by_student[e.student_id].append(e)
+
+    # Every course referenced by those enrollments, so the elective snapshot
+    # below is a dict lookup rather than a `session.get` per row.
+    referenced_ids = {course_id for _, course_id in enrollment_index}
+    course_by_id: dict[str, Course] = {}
+    if referenced_ids:
+        course_by_id = {
+            c.id: c
+            for c in Course.query.filter(Course.id.in_(referenced_ids)).all()
+        }
+
+    mandatory_courses = (
+        Course.query.filter_by(grade_id=dst.grade_id, elective_group=None).all()
+        if dst.grade_id
+        else []
+    )
+
+    # Destination-grade courses that succeed something, keyed by predecessor.
+    successor_by_predecessor: dict[str, Course] = {
+        c.succeeds_course_id: c
+        for c in Course.query.filter(
+            Course.grade_id == dst.grade_id,
+            Course.succeeds_course_id.isnot(None),
+        ).all()
+    }
+
+    for s in moving:
+        active = active_by_student.get(s.id, [])
 
         # Snapshot student's active elective enrollments before we soft-drop.
-        old_elective_courses = []
-        for e in Enrollment.query.filter_by(student_id=s.id, status="active").all():
-            c = db.session.get(Course, e.course_id)
-            if c and c.elective_group:
-                old_elective_courses.append(c)
+        old_elective_courses = [
+            c
+            for c in (course_by_id.get(e.course_id) for e in active)
+            if c is not None and c.elective_group
+        ]
 
         # Cross-grade move: soft-drop old, place, auto-enroll new mandatory.
-        _soft_drop_all_active_enrollments(s)
+        _soft_drop_all_active_enrollments(s, active_enrollments=active)
         s.class_id = dst.id
-        _auto_enroll_mandatory_for_grade(s, dst.grade_id, admin)
+        _auto_enroll_mandatory_for_grade(
+            s,
+            dst.grade_id,
+            admin,
+            mandatory_courses=mandatory_courses,
+            enrollment_index=enrollment_index,
+        )
 
         # Carry-forward electives.
         for old_c in old_elective_courses:
-            successor = Course.query.filter_by(
-                grade_id=dst.grade_id,
-                succeeds_course_id=old_c.id,
-                elective_group=old_c.elective_group,
-            ).first()
-            if successor is None:
+            successor = successor_by_predecessor.get(old_c.id)
+            if successor is None or successor.elective_group != old_c.elective_group:
                 continue
-            db.session.add(
-                Enrollment(
-                    student_id=s.id,
-                    course_id=successor.id,
-                    status="active",
-                    enrolled_via="elective_choice",
-                    enrolled_by_id=admin.id,
-                )
+            new_enrollment = Enrollment(
+                student_id=s.id,
+                course_id=successor.id,
+                status="active",
+                enrolled_via="elective_choice",
+                enrolled_by_id=admin.id,
             )
+            db.session.add(new_enrollment)
+            # Keep the index honest so a later mandatory pass for this same
+            # student sees the row we just added rather than duplicating it.
+            enrollment_index[(s.id, successor.id)] = new_enrollment
             carried += 1
 
         promoted += 1

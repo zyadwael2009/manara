@@ -32,7 +32,7 @@ class _AnnouncementsBannerState extends ConsumerState<AnnouncementsBanner> {
       // Phase 26 · T9 — instead of dropping the banner silently, show
       // a tiny "couldn't load — tap to retry" chip so a real server
       // outage isn't indistinguishable from an empty feed.
-      error: (_, __) => SilentError(
+      error: (_, _) => SilentError(
         onRetry: () => ref.invalidate(myAnnouncementsProvider),
       ),
       data: (rows) {

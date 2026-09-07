@@ -20,7 +20,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Deploying a bundle whose backend tests are failing is how a broken build
+  # reaches real users. `build` waits on this.
+  test:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - run: python -m pytest -q
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     env:
       # OVERRIDE THIS with your PythonAnywhere URL. If you set a repo

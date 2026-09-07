@@ -1,4 +1,5 @@
 /// Phase 24 — streak + badges + search + question bank envelopes.
+library;
 
 class StreakState {
   final int currentStreak;

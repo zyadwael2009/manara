@@ -29,7 +29,7 @@ class TodayCard extends ConsumerWidget {
     // shrink() into a visible "couldn't load — tap to retry" chip.)
     return async.when(
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => SilentError(
+      error: (_, _) => SilentError(
         onRetry: () => ref.invalidate(todayProvider),
       ),
       data: (t) {

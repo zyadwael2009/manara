@@ -1,6 +1,7 @@
 /// Phase 21 — communication models: notifications, DM threads/messages,
 /// lesson comments, homework posts. Kept in one file — the four features
 /// are all light-weight envelopes with no shared substructure.
+library;
 
 class AppNotification {
   final String id;

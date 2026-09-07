@@ -1,5 +1,6 @@
 /// Consolidated grading-related model classes — kept in one file since
 /// they're small and always used together.
+library;
 
 class GradeCategory {
   final String id;

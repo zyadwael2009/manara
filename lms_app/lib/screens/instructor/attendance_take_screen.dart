@@ -179,7 +179,7 @@ class _AttendanceTakeScreenState extends ConsumerState<AttendanceTakeScreen> {
                   : ListView.separated(
                       padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
                       itemCount: data.rows.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 4),
+                      separatorBuilder: (_, _) => const SizedBox(height: 4),
                       itemBuilder: (context, i) {
                         final row = data.rows[i];
                         final local = _local[row.student.id];

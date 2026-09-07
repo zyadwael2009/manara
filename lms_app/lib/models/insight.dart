@@ -1,4 +1,5 @@
 /// Phase 22 — insight & intervention envelopes.
+library;
 
 class AtRiskRow {
   final String studentId;

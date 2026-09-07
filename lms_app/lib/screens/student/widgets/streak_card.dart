@@ -26,7 +26,7 @@ class StreakCard extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       // Phase 26 · T9 — SilentError so a streak fetch failure is
       // visible without dominating the page.
-      error: (_, __) => SilentError(
+      error: (_, _) => SilentError(
         onRetry: () => ref.invalidate(myStreakProvider),
       ),
       data: (streak) {

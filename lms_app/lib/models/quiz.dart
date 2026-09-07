@@ -1,4 +1,5 @@
 /// Quiz + question + attempt models for Phase 4.
+library;
 
 class QuizSummary {
   final String id;

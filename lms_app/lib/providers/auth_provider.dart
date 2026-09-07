@@ -109,6 +109,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Change the signed-in user's own password.
+  ///
+  /// Every other device is signed out server-side; this one is re-issued a
+  /// token by `ApiService.changePassword`, which also persists it.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final bundle = await _api.changePassword(
+      currentPassword: currentPassword,
+      newPassword: newPassword,
+    );
+    await _storage.setUserJson(bundle.user.toJson());
+    state = AuthState.signedIn(bundle.user);
+  }
+
   Future<void> logout() async {
     try {
       await _api.logout();

@@ -90,6 +90,18 @@ def _resolve_cors_origins() -> list[str]:
     raw = os.environ.get("CORS_ORIGINS", "").strip()
     if raw:
         return [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
+
+    # No whitelist configured. In production that is a misconfiguration, not a
+    # default: falling through to the localhost dev regex below leaves the
+    # deployed web app unable to call its own API, and the only symptom is an
+    # opaque CORS error in the browser console — nothing in the server log.
+    # Fail at boot instead, where the message is readable.
+    if _IS_PRODUCTION:
+        raise RuntimeError(
+            "CORS_ORIGINS must be set when MANARA_ENV=production. "
+            "Set it to the deployed web origin(s), comma-separated, e.g. "
+            "CORS_ORIGINS=https://<gh-user>.github.io"
+        )
     # Dev defaults: `flutter run -d chrome` uses a random port each time, so
     # a fixed whitelist doesn't work. Instead accept any http://localhost:<port>
     # or http://127.0.0.1:<port> via a regex. Flask-CORS accepts compiled

@@ -1,4 +1,5 @@
 /// Phase 19 — one announcement row (school / class / course).
+library;
 
 class Announcement {
   final String id;
@@ -97,7 +98,7 @@ class AnnouncementInput {
         if (classId != null) 'classId': classId,
         if (courseId != null) 'courseId': courseId,
         if (expiresAt != null)
-          'expiresAt': '${expiresAt!.toUtc().toIso8601String()}',
+          'expiresAt': expiresAt!.toUtc().toIso8601String(),
       };
 }
 

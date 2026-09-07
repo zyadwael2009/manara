@@ -88,7 +88,7 @@ class ClassAttendance {
       );
 }
 
-/// One row in the payload sent up via PUT /classes/<id>/attendance.
+/// One row in the payload sent up via `PUT /classes/<id>/attendance`.
 class AttendanceMarkInput {
   final String studentId;
   final String status;

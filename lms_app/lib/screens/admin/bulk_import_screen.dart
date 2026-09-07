@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -292,15 +293,19 @@ class _ResultSummary extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: AppSpacing.md),
-        if (result.created.isNotEmpty && result.temporaryPassword.isNotEmpty)
+        if (result.created.isNotEmpty) ...[
           _NoticeCard(
-            title: 'Temporary password',
-            body: 'Every new user was created with password '
-                '“${result.temporaryPassword}”. Ask each to reset on first login.',
+            title: 'Temporary passwords',
+            body: 'Each new user has their own password, listed below. This is '
+                'the only time they are shown — copy them now. Everyone here '
+                'must choose a new password when they first sign in.',
             color: AppColors.warning,
             bg: AppColors.warningSoft,
             icon: Icons.key_outlined,
           ),
+          const SizedBox(height: AppSpacing.md),
+          _CredentialsCard(rows: result.created),
+        ],
         if (result.skipped.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),
           _RowsCard(
@@ -452,6 +457,93 @@ class _ErrorBanner extends StatelessWidget {
               style: AppTextStyles.body(context, color: AppColors.danger)),
         ),
       ]),
+    );
+  }
+}
+
+
+/// The one-and-only listing of the temporary passwords a bulk import just
+/// minted. Rendered as selectable text plus a copy-all button, because the
+/// office has to get these to real people and the server keeps only hashes.
+class _CredentialsCard extends StatelessWidget {
+  final List<BulkImportRow> rows;
+
+  const _CredentialsCard({required this.rows});
+
+  String get _asText => [
+        for (final r in rows) '${r.email}\t${r.temporaryPassword ?? ""}',
+      ].join('\n');
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.warningSoft,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'NEW ACCOUNTS',
+                  style: AppTextStyles.micro(context, color: AppColors.warning)
+                      .copyWith(letterSpacing: 0.7, fontWeight: FontWeight.w800),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: _asText));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Copied to clipboard.')),
+                  );
+                },
+                icon: const Icon(Icons.copy_all_rounded, size: 16),
+                label: const Text('Copy all'),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          SelectionArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final r in rows)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            r.email,
+                            style: AppTextStyles.caption(context),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            r.temporaryPassword ?? '',
+                            style: AppTextStyles.caption(context).copyWith(
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

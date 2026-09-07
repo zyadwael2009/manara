@@ -21,6 +21,7 @@ Every decorator returns a JSON error (401/403) rather than redirecting.
 """
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any, Callable
@@ -34,17 +35,24 @@ from utils.validation import (
     one_of,
     require_fields,
     require_json,
+    validate_password_strength,
 )
 from utils.time import utc_now
 
 auth_bp = Blueprint("auth", __name__)
 
-# Roles a user is allowed to pick during self-registration. `admin` is
-# excluded — admins are seeded manually / promoted by another admin.
-# Phase 6: parent accounts are created by the school office only. Self-
-# registration is limited to students and instructors; a POST with role
-# 'parent' or 'admin' is rejected below regardless of what the picker sent.
-SELF_REGISTER_ROLES = ("student", "instructor")
+# Roles a user is allowed to pick during self-registration.
+#
+# `student` only. This is a single school: staff accounts are created by the
+# office, and letting anyone on the internet mint themselves an `instructor`
+# handed an unvetted stranger a staff role — `utils/permissions` kept them
+# away from any *specific* class's content, but the role by itself unlocked
+# staff-scoped endpoints and file upload onto a shared disk.
+#
+# Instructors and parents are created by an admin via `POST /api/users`
+# (see `routes/users.py::admin_create_user`) or the CSV bulk import; `admin`
+# comes only from the seed script or a direct DB write.
+SELF_REGISTER_ROLES = ("student",)
 
 
 # -----------------------------------------------------------------------------
@@ -175,6 +183,31 @@ def _write_login_session(user: User) -> None:
     session.permanent = True
 
 
+def _dummy_hash() -> str:
+    """A throwaway hash to verify against when the account does not exist.
+
+    The point is that an unknown email costs the same wall-clock as a known
+    one, so a prober can't enumerate accounts by timing. That only holds if
+    the dummy uses the *same* KDF and parameters as real passwords — this was
+    previously a hardcoded `pbkdf2:sha256:600000` literal while real hashes
+    were scrypt, so the two paths had visibly different cost profiles.
+
+    Derived once per app and cached: computing it on every anonymous login
+    attempt would double the work an attacker can make the server do.
+    """
+    from werkzeug.security import generate_password_hash
+
+    from models import password_hash_kwargs
+
+    cached = current_app.config.get("_DUMMY_PASSWORD_HASH")
+    if cached is None:
+        cached = generate_password_hash(
+            secrets.token_urlsafe(32), **password_hash_kwargs()
+        )
+        current_app.config["_DUMMY_PASSWORD_HASH"] = cached
+    return cached
+
+
 def _is_locked_out(user: User) -> bool:
     return bool(user.locked_until and user.locked_until > utc_now())
 
@@ -201,7 +234,24 @@ def _reset_failed_login(user: User) -> None:
 @auth_bp.route("/register", methods=["POST"])
 @auth_bp.route("/register/", methods=["POST"])
 def register():
-    """Create a new user. Roles: student / instructor / parent."""
+    """Self-service signup. Students only — see `SELF_REGISTER_ROLES`."""
+    # Account creation is unauthenticated, so it is the cheapest way to fill
+    # a table (or a disk) from the outside. `/login` has had a per-IP burst
+    # limit since Phase 25; this endpoint had none.
+    if not current_app.config.get("TESTING"):
+        from utils.rate_limit import check_rate
+
+        ok, retry_after = check_rate(
+            "register", request.remote_addr or "-", limit=5, window=3600,
+        )
+        if not ok:
+            resp = jsonify(
+                {"error": "Too many sign-ups from this network. Try again later."}
+            )
+            resp.status_code = 429
+            resp.headers["Retry-After"] = str(retry_after)
+            return resp
+
     try:
         payload = require_json(request.get_json(silent=True))
         require_fields(payload, ("name", "email", "password", "role"))
@@ -214,8 +264,9 @@ def register():
 
     if "@" not in email or "." not in email.split("@")[-1]:
         return jsonify({"error": "Invalid email address."}), 400
-    if len(password) < 8:
-        return jsonify({"error": "Password must be at least 8 characters."}), 400
+    error = validate_password_strength(password)
+    if error:
+        return jsonify({"error": error}), 400
 
     if User.query.filter_by(email=email).first() is not None:
         return jsonify({"error": "An account with this email already exists."}), 409
@@ -278,14 +329,11 @@ def login():
     # `_register_failed_login` also normalises so its extra commit doesn't
     # leak "this is a real user" timing.
     from werkzeug.security import check_password_hash as _cph
-    _DUMMY_HASH = (
-        "pbkdf2:sha256:600000$dummy$0000000000000000000000000000000000"
-        "000000000000000000000000000000"
-    )
+
     _INVALID_MSG = "Invalid email or password."
 
     if user is None or not user.is_active:
-        _cph(_DUMMY_HASH, password)
+        _cph(_dummy_hash(), password)
         return jsonify({"error": _INVALID_MSG}), 401
 
     password_ok = user.check_password(password)
@@ -318,6 +366,75 @@ def me():
     session["tv"] = user.token_version
     session.permanent = True
     return jsonify({"user": user.to_dict(), "sessionToken": _sign_session_token()}), 200
+
+
+@auth_bp.route("/password", methods=["POST"])
+@auth_bp.route("/password/", methods=["POST"])
+@login_required
+def change_password():
+    """Change your own password.
+
+    Requires the current password — a session token alone must not be enough,
+    or a borrowed unlocked device becomes a permanent account takeover.
+
+    On success `token_version` is bumped, which revokes every outstanding
+    token for this user; the caller is then re-issued a fresh one so the
+    device that made the change stays signed in and every *other* device is
+    signed out. That is the behaviour you want when the reason for the change
+    is "someone else knows my password".
+    """
+    user = current_user()
+
+    # Wrong-current-password guesses are an online brute force against a
+    # known account, so throttle them the way /login is throttled.
+    if not current_app.config.get("TESTING"):
+        from utils.rate_limit import check_rate
+
+        ok, retry_after = check_rate(
+            "change_password", user.id, limit=10, window=300,
+        )
+        if not ok:
+            resp = jsonify({"error": "Too many attempts. Try again shortly."})
+            resp.status_code = 429
+            resp.headers["Retry-After"] = str(retry_after)
+            return resp
+
+    try:
+        payload = require_json(request.get_json(silent=True))
+        require_fields(payload, ("currentPassword", "newPassword"))
+        current_password = as_str(payload["currentPassword"], "currentPassword", max_len=255)
+        new_password = as_str(payload["newPassword"], "newPassword", max_len=255)
+    except ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+
+    if not user.check_password(current_password):
+        return jsonify({"error": "Current password is incorrect."}), 403
+
+    error = validate_password_strength(new_password)
+    if error:
+        return jsonify({"error": error}), 400
+    if new_password == current_password:
+        return jsonify({"error": "New password must differ from the current one."}), 400
+
+    user.set_password(new_password)
+    user.must_change_password = False
+    user.token_version = (user.token_version or 0) + 1
+    user.failed_login_count = 0
+    user.locked_until = None
+    db.session.commit()
+
+    # Re-issue for THIS device against the new token_version.
+    _write_login_session(user)
+    return (
+        jsonify(
+            {
+                "message": "Password changed. Other devices have been signed out.",
+                "user": user.to_dict(),
+                "sessionToken": _sign_session_token(),
+            }
+        ),
+        200,
+    )
 
 
 @auth_bp.route("/logout", methods=["POST"])

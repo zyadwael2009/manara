@@ -120,7 +120,7 @@ class _AnnouncementComposerSheetState
           const SizedBox(height: AppSpacing.md),
           if (_audience == 'class') ...[
             DropdownButtonFormField<String>(
-              value: _classId,
+              initialValue: _classId,
               hint: const Text('Which class?'),
               decoration: const InputDecoration(
                 labelText: 'Class',
@@ -135,7 +135,7 @@ class _AnnouncementComposerSheetState
             const SizedBox(height: AppSpacing.md),
           ] else if (_audience == 'course') ...[
             DropdownButtonFormField<String>(
-              value: _courseId,
+              initialValue: _courseId,
               hint: const Text('Which course?'),
               decoration: const InputDecoration(
                 labelText: 'Course',

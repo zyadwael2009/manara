@@ -11,6 +11,7 @@ from routes.enrollments import enrollments_bp
 from routes.students import students_bp
 from routes.department_leaders import department_leaders_bp
 from routes.uploads import uploads_bp
+from routes.media import media_bp
 
 # Phase 3 additions
 from routes.progress import progress_bp
@@ -129,4 +130,5 @@ __all__ = [
     "fees_bp",
     "diplomas_bp",
     "standards_bp",
+    "media_bp",
 ]

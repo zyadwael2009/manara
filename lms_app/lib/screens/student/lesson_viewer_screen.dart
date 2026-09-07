@@ -630,18 +630,25 @@ class _CheckpointDialogState extends State<_CheckpointDialog> {
         children: [
           Text(widget.checkpoint.prompt, style: AppTextStyles.body(context)),
           const SizedBox(height: AppSpacing.md),
-          for (final o in widget.checkpoint.options)
-            RadioListTile<String>(
-              value: o.id,
-              groupValue: _picked,
-              onChanged: (v) => setState(() {
-                _picked = v;
-                _wrong = false;
-              }),
-              title: Text(o.text),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
+          RadioGroup<String>(
+            groupValue: _picked,
+            onChanged: (v) => setState(() {
+              _picked = v;
+              _wrong = false;
+            }),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final o in widget.checkpoint.options)
+                  RadioListTile<String>(
+                    value: o.id,
+                    title: Text(o.text),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+              ],
             ),
+          ),
           if (_wrong) ...[
             const SizedBox(height: AppSpacing.sm),
             Text('Not quite — give it another try.',

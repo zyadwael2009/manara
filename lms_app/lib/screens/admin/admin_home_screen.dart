@@ -5,12 +5,12 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/transitions.dart';
+import '../../core/widgets/account_menu.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../models/grade.dart';
 import '../../models/school_class.dart';
 import '../../models/section.dart';
 import '../../models/user.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/school_providers.dart';
 import '../../services/api_service.dart';
 import '../instructor/attendance_take_screen.dart';
@@ -80,11 +80,7 @@ class _AdminHomeScreenState extends ConsumerState<AdminHomeScreen>
             },
           ),
           const NotificationsBell(),
-          IconButton(
-            tooltip: 'Sign out',
-            icon: const Icon(Icons.logout_rounded),
-            onPressed: () => ref.read(authProvider.notifier).logout(),
-          ),
+          const AccountMenu(),
         ],
         bottom: TabBar(
           controller: _tab,
@@ -304,7 +300,7 @@ class _ClassesTabState extends ConsumerState<_ClassesTab> {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.md),
           child: gradesAsync.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
             data: (grades) => Wrap(
               spacing: AppSpacing.sm,
               children: [

@@ -5,7 +5,9 @@ prevents a teacher from fishing for other teachers' or parents' emails.
 """
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+import secrets
+
+from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import or_
 
 from models import User, db
@@ -17,6 +19,7 @@ from utils.validation import (
     one_of,
     require_fields,
     require_json,
+    validate_password_strength,
 )
 
 users_bp = Blueprint("users", __name__)
@@ -100,16 +103,93 @@ def admin_create_user():
 
     if "@" not in email or "." not in email.split("@")[-1]:
         return jsonify({"error": "Invalid email address."}), 400
-    if len(password) < 8:
-        return jsonify({"error": "Password must be at least 8 characters."}), 400
+    error = validate_password_strength(password)
+    if error:
+        return jsonify({"error": error}), 400
     if User.query.filter_by(email=email).first() is not None:
         return jsonify({"error": "An account with this email already exists."}), 409
 
     u = User(name=name, email=email, role=role)
     u.set_password(password)
+    # The admin picked this password, not the account holder, so make the
+    # holder replace it before the account is really theirs.
+    u.must_change_password = True
     db.session.add(u)
     db.session.commit()
     return jsonify(u.to_dict()), 201
+
+
+@users_bp.route("/<string:user_id>/password", methods=["POST"])
+@users_bp.route("/<string:user_id>/password/", methods=["POST"])
+@require_admin
+def admin_reset_password(user_id: str):
+    """Admin sets a new password for another account — the "I forgot mine"
+    path for a school with no outbound email.
+
+    Deliberately narrow:
+      * Never targets another admin. One admin resetting a peer's password is
+        a silent takeover of an equal account; the seed script or a direct DB
+        write stays the only way in. Resetting your OWN password goes through
+        `POST /api/auth/password`, which demands the current one.
+      * Bumps `token_version`, so any session the holder (or anyone else) had
+        open is revoked immediately.
+      * Flags `must_change_password`, so the holder is pushed to choose their
+        own on next sign-in.
+
+    Returns the generated password once when the caller did not supply one.
+    There is nowhere else to read it later — it is stored only as a hash.
+    """
+    target = db.session.get(User, user_id)
+    if target is None:
+        return jsonify({"error": "User not found."}), 404
+
+    admin = current_user()
+    if target.role == "admin":
+        return (
+            jsonify(
+                {
+                    "error": (
+                        "Admin passwords cannot be reset from here. "
+                        "Use Account settings, or the seed script."
+                    )
+                }
+            ),
+            403,
+        )
+
+    payload = request.get_json(silent=True) or {}
+    supplied = payload.get("newPassword")
+    if supplied is not None:
+        try:
+            new_password = as_str(supplied, "newPassword", max_len=255)
+        except ValidationError as e:
+            return jsonify({"error": str(e)}), 400
+        error = validate_password_strength(new_password)
+        if error:
+            return jsonify({"error": error}), 400
+        generated = False
+    else:
+        new_password = secrets.token_urlsafe(12)
+        generated = True
+
+    target.set_password(new_password)
+    target.must_change_password = True
+    target.token_version = (target.token_version or 0) + 1
+    target.failed_login_count = 0
+    target.locked_until = None
+    db.session.commit()
+
+    current_app.logger.info(
+        "admin %s reset password for user %s (%s)", admin.id, target.id, target.role,
+    )
+
+    body = {
+        "message": f"Password reset for {target.email}. Their other sessions were signed out.",
+        "user": target.to_dict(),
+    }
+    if generated:
+        body["temporaryPassword"] = new_password
+    return jsonify(body), 200
 
 
 @users_bp.route("/parents", methods=["GET"])

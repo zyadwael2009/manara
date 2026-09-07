@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Iterable
 
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 from models import (
     Assignment,
@@ -153,12 +154,22 @@ def _quiz_attempted_set(
 
 
 def _course_published_quizzes(course: Course) -> list[Quiz]:
-    """Every published quiz across every module of a course."""
-    out: list[Quiz] = []
-    for module in course.modules:
-        for q in Quiz.query.filter_by(module_id=module.id, is_published=True).all():
-            out.append(q)
-    return out
+    """Every published quiz across every module of a course.
+
+    One query for the whole course. This used to issue one per module, which
+    the instructor dashboard then multiplied by the number of courses on the
+    screen.
+    """
+    module_ids = [m.id for m in course.modules]
+    if not module_ids:
+        return []
+    return (
+        Quiz.query.filter(
+            Quiz.module_id.in_(module_ids),
+            Quiz.is_published.is_(True),
+        )
+        .all()
+    )
 
 
 def _letter_from_pct(p: float | None) -> str | None:
@@ -214,13 +225,42 @@ def instructor_course_rows(user: User) -> list[dict]:
     whole school.
     """
     admin = is_admin(user)
+    courses = _instructor_courses(user)
+
+    # --- Prefetch, once, what the per-course loop below needs -------------
+    # Three N+1s used to live in this loop: one enrollment query per course,
+    # one `classes_user_teaches_for_course` query per course, and — the
+    # expensive one — a lazy `e.student` load per enrollment, which for a
+    # teacher with six courses of thirty students meant ~180 single-row
+    # SELECTs just to read `student.class_id`.
+    course_ids = [c.id for c in courses]
+    enrollments_by_course: dict[str, list[Enrollment]] = {cid: [] for cid in course_ids}
+    if course_ids:
+        loaded = (
+            Enrollment.query.options(selectinload(Enrollment.student))
+            .filter(
+                Enrollment.course_id.in_(course_ids),
+                Enrollment.status.in_(("active", "completed")),
+            )
+            .all()
+        )
+        for e in loaded:
+            enrollments_by_course[e.course_id].append(e)
+
+    # {course_id: {class_id, ...}} for the caller, in one query.
+    taught_classes_by_course: dict[str, set[str]] = defaultdict(set)
+    if not admin and course_ids:
+        for row in ClassCourseTeacher.query.filter(
+            ClassCourseTeacher.teacher_id == user.id,
+            ClassCourseTeacher.course_id.in_(course_ids),
+        ).all():
+            taught_classes_by_course[row.course_id].add(row.class_id)
+
     rows: list[dict] = []
-    for c in _instructor_courses(user):
-        enrollments = Enrollment.query.filter_by(course_id=c.id).filter(
-            Enrollment.status.in_(("active", "completed"))
-        ).all()
+    for c in courses:
+        enrollments = enrollments_by_course.get(c.id, [])
         if not admin:
-            allowed = classes_user_teaches_for_course(user, c)
+            allowed = taught_classes_by_course.get(c.id, set())
             enrollments = [
                 e for e in enrollments
                 if e.student is not None and e.student.class_id in allowed
@@ -293,9 +333,12 @@ def course_drilldown(course: Course, viewer: User | None = None) -> dict:
     — so Teacher X in Class A never sees Class B students' names in the
     at-risk / top-5 lists.
     """
-    enrollments = Enrollment.query.filter_by(course_id=course.id).filter(
-        Enrollment.status.in_(("active", "completed"))
-    ).all()
+    enrollments = (
+        Enrollment.query.options(selectinload(Enrollment.student))
+        .filter_by(course_id=course.id)
+        .filter(Enrollment.status.in_(("active", "completed")))
+        .all()
+    )
     if viewer is not None and not is_admin(viewer):
         allowed = classes_user_teaches_for_course(viewer, course)
         enrollments = [
@@ -321,20 +364,51 @@ def course_drilldown(course: Course, viewer: User | None = None) -> dict:
     # Per-module completion: for each enrollment, fraction of that module's
     # lessons the student has marked complete; then average across
     # enrollments. Modules with zero lessons render as 0.
+    #
+    # Two queries for the whole course, then arithmetic. This was previously
+    # one lesson-id query per module plus a COUNT per (module × enrollment)
+    # pair — a course with 8 modules and 30 students issued ~250 round trips
+    # to render one screen.
+    modules = course.modules.order_by(Module.order_index).all()
+    module_ids = [m.id for m in modules]
+
+    lesson_ids_by_module: dict[str, list[str]] = {mid: [] for mid in module_ids}
+    if module_ids:
+        for lesson_id, module_id in (
+            db.session.query(Lesson.id, Lesson.module_id)
+            .filter(Lesson.module_id.in_(module_ids))
+            .all()
+        ):
+            lesson_ids_by_module[module_id].append(lesson_id)
+
+    # {(enrollment_id, lesson_id)} for every completed lesson in this course.
+    completed_pairs: set[tuple[str, str]] = set()
+    enrollment_ids = [e.id for e in enrollments]
+    all_lesson_ids = [lid for ids in lesson_ids_by_module.values() for lid in ids]
+    if enrollment_ids and all_lesson_ids:
+        completed_pairs = {
+            (enrollment_id, lesson_id)
+            for enrollment_id, lesson_id in db.session.query(
+                LessonProgress.enrollment_id, LessonProgress.lesson_id
+            )
+            .filter(
+                LessonProgress.enrollment_id.in_(enrollment_ids),
+                LessonProgress.lesson_id.in_(all_lesson_ids),
+                LessonProgress.completed.is_(True),
+            )
+            .all()
+        }
+
     module_rows: list[dict] = []
-    for module in course.modules.order_by(Module.order_index).all():
-        lesson_ids = [lid for (lid,) in db.session.query(Lesson.id).filter_by(module_id=module.id).all()]
+    for module in modules:
+        lesson_ids = lesson_ids_by_module.get(module.id, [])
         if not lesson_ids or not enrollments:
             module_rows.append({"id": module.id, "title": module.title, "avgCompletion": 0.0})
             continue
         total = 0.0
         for e in enrollments:
-            done = (
-                LessonProgress.query.filter(
-                    LessonProgress.enrollment_id == e.id,
-                    LessonProgress.lesson_id.in_(lesson_ids),
-                    LessonProgress.completed.is_(True),
-                ).count()
+            done = sum(
+                1 for lid in lesson_ids if (e.id, lid) in completed_pairs
             )
             total += done / len(lesson_ids)
         module_rows.append({
@@ -692,13 +766,25 @@ def compute_at_risk(student: User) -> dict:
                 .filter(Assignment.due_at < now)
                 .all()
             )
-            missed = 0
-            for a in due_past:
-                sub = AssignmentSubmission.query.filter_by(
-                    assignment_id=a.id, student_id=student.id,
-                ).first()
-                if sub is None or sub.submitted_at is None:
-                    missed += 1
+            # One query for every submission this student has against the
+            # past-due set, rather than one lookup per assignment. This
+            # function runs per student across a whole class, so the inner
+            # query was being multiplied twice over.
+            submitted_assignment_ids = {
+                assignment_id
+                for (assignment_id,) in db.session.query(
+                    AssignmentSubmission.assignment_id
+                )
+                .filter(
+                    AssignmentSubmission.student_id == student.id,
+                    AssignmentSubmission.assignment_id.in_([a.id for a in due_past]),
+                    AssignmentSubmission.submitted_at.isnot(None),
+                )
+                .all()
+            } if due_past else set()
+            missed = sum(
+                1 for a in due_past if a.id not in submitted_assignment_ids
+            )
             if missed >= _AT_RISK_MISSING_ASSIGNMENTS:
                 reasons.append("missing_work")
 
@@ -712,24 +798,38 @@ def compute_at_risk(student: User) -> dict:
             .filter(Quiz.is_published.is_(True))
             .all()
         ) if module_ids else []
-        failing = 0
-        for q in pub_quizzes:
-            attempts = (
-                QuizAttempt.query.filter_by(
-                    quiz_id=q.id, student_id=student.id,
+        # Best submitted attempt per quiz, for this student, in one query —
+        # the loop below then does arithmetic only. Previously one query per
+        # published quiz, per student.
+        best_pct_by_quiz: dict[str, float] = {}
+        if pub_quizzes:
+            attempt_rows = (
+                db.session.query(
+                    QuizAttempt.quiz_id,
+                    QuizAttempt.final_score,
+                    QuizAttempt.max_score,
                 )
-                .filter(QuizAttempt.submitted_at.isnot(None))
-                .filter(QuizAttempt.final_score.isnot(None))
-                .filter(QuizAttempt.max_score.isnot(None))
+                .filter(
+                    QuizAttempt.student_id == student.id,
+                    QuizAttempt.quiz_id.in_([q.id for q in pub_quizzes]),
+                    QuizAttempt.submitted_at.isnot(None),
+                    QuizAttempt.final_score.isnot(None),
+                    QuizAttempt.max_score.isnot(None),
+                )
                 .all()
             )
-            if not attempts:
-                continue
-            best_pct = max(
-                (float(a.final_score) / float(a.max_score) * 100.0)
-                for a in attempts
-                if a.max_score and float(a.max_score) > 0
-            )
+            for quiz_id, final_score, max_score in attempt_rows:
+                if not max_score or float(max_score) <= 0:
+                    continue
+                pct = float(final_score) / float(max_score) * 100.0
+                if pct > best_pct_by_quiz.get(quiz_id, -1.0):
+                    best_pct_by_quiz[quiz_id] = pct
+
+        failing = 0
+        for q in pub_quizzes:
+            best_pct = best_pct_by_quiz.get(q.id)
+            if best_pct is None:
+                continue  # unattempted is not the same as failed here
             if best_pct < q.passing_score:
                 failing += 1
         if failing >= _AT_RISK_FAILED_QUIZZES:
@@ -750,14 +850,18 @@ def compute_attendance_patterns(
       * tardyLeaders     — top-N by late-count desc.
       * classes          — per-class mean attendance %, top-N desc.
     """
-    from utils.attendance import compute_student_attendance_summary
+    from utils.attendance import compute_attendance_summaries
 
     # Chronic absentees + tardy leaders — walk every active student.
+    # The summaries come back in a single grouped query; calling the
+    # single-student helper in this loop meant one SELECT per student in the
+    # school, which is the cost that grows fastest as the roster does.
     students = User.query.filter_by(role="student", is_active=True).all()
+    summaries = compute_attendance_summaries([s.id for s in students])
     chronic: list[dict] = []
     tardy: list[dict] = []
     for s in students:
-        summary = compute_student_attendance_summary(s.id)
+        summary = summaries[s.id]
         if summary["total"] == 0:
             continue
         pct = summary["percent"]
@@ -793,14 +897,21 @@ def compute_attendance_patterns(
         entry["total"] += int(n)
         if status in ("present", "excused"):
             entry["good"] += int(n)
+    class_names: dict[str, str] = {}
+    if by_class:
+        class_names = {
+            class_id: name
+            for class_id, name in db.session.query(SchoolClass.id, SchoolClass.name)
+            .filter(SchoolClass.id.in_(list(by_class)))
+            .all()
+        }
     class_rows: list[dict] = []
     for cid, agg in by_class.items():
         if agg["total"] == 0:
             continue
-        sc = db.session.get(SchoolClass, cid)
         class_rows.append({
             "classId": cid,
-            "name": sc.name if sc else "",
+            "name": class_names.get(cid, ""),
             "pctPresent": round(agg["good"] / agg["total"] * 100.0, 1),
             "marksCount": agg["total"],
         })

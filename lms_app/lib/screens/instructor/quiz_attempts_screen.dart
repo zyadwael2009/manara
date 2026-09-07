@@ -353,7 +353,7 @@ class _StatsBand extends ConsumerWidget {
     final async = ref.watch(quizAttemptStatsProvider(quizId));
     return async.when(
       loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
       data: (s) {
         if (!s.hasSubmissions) {
           return _bareContainer(
